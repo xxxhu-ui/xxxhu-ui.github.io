@@ -43,6 +43,28 @@
   .tb:active{background:rgba(127,212,255,.35);border-color:#7fd4ff}
   .tb.j{width:84px;height:84px;font-size:19px;letter-spacing:1px;color:#ffe066;border-color:#8a7326}
   @media (min-width:900px){#pad{display:none}}
+
+  /* ===== 横屏适配 ===== */
+  #pad{padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+  @media (orientation:landscape){
+    #pad{padding-left:calc(20px + env(safe-area-inset-left,0px));
+         padding-right:calc(20px + env(safe-area-inset-right,0px))}
+  }
+  @media (orientation:landscape) and (max-height:520px){
+    .tb{width:62px;height:62px;font-size:23px}
+    .tb.j{width:70px;height:70px;font-size:16px}
+    #pad{padding-bottom:calc(10px + env(safe-area-inset-bottom,0px))}
+  }
+  #rot{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;
+       justify-content:center;background:#05070f;z-index:60;text-align:center;padding:26px}
+  #rot.on{display:flex}
+  #rot .ph{font-size:58px;line-height:1;animation:sp 1.8s ease-in-out infinite}
+  @keyframes sp{0%,35%{transform:rotate(0deg)}65%,100%{transform:rotate(90deg)}}
+  #rot .t1{font-size:19px;color:#cfe0ff;margin:18px 0 14px;letter-spacing:2px}
+  #rot .t1 b{color:#ffe066}
+  #rot .t2{font-size:13px;color:#7d8cb5;line-height:1.9;margin-top:16px}
+  #rot .t2 b{color:#7fd4ff}
+  #rot .sk{text-decoration:underline;cursor:pointer;margin-top:22px}
 </style>
 </head>
 <body>
@@ -79,6 +101,14 @@
   <h1 style="color:#ff6b7f;text-shadow:0 0 12px #8e1f30">你 倒 下 了</h1>
   <div id="dStats"></div>
   <button class="btn" id="bAgain">再 来 一 次</button>
+</div>
+
+<div id="rot">
+  <div class="ph">📱</div>
+  <div class="t1">把手机<b>横过来</b>玩</div>
+  <button class="btn" id="bRot">全 屏 横 屏</button>
+  <div class="t2">按了没反应？去手机快捷开关里关掉 <b>竖屏锁定</b></div>
+  <div class="t2 sk" id="bSkip">算了，就这样玩</div>
 </div>
 
 <script>
@@ -740,8 +770,10 @@ function bindHold(id, name){
 }
 bindHold('bL','left'); bindHold('bR','right'); bindHold('bJ','jump');
 
-$('bStart').onclick = startGame;
-$('bAgain').onclick = startGame;
+$('bStart').onclick = function(){ skipRot = true; goFull(); startGame(); };
+$('bAgain').onclick = function(){ goFull(); startGame(); };
+$('bRot').onclick   = function(){ goFull(); };
+$('bSkip').onclick  = function(){ skipRot = true; checkOrient(); };
 
 /* ============================ 自适应 ============================ */
 function fit(){
@@ -749,9 +781,36 @@ function fit(){
   cv.style.width  = Math.floor(W * s) + 'px';
   cv.style.height = Math.floor(H * s) + 'px';
 }
-addEventListener('resize', fit);
-addEventListener('orientationchange', () => setTimeout(fit, 120));
+let skipRot = false;
+
+/* 强制全屏 + 强制横屏。orientation.lock 目前 Android Chrome 支持，
+   iOS Safari 不支持，会静默降级成「只全屏」。*/
+function goFull(){
+  var el = document.documentElement;
+  var fn = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+  var p;
+  try { p = fn ? fn.call(el) : Promise.reject(); } catch (e) { p = Promise.reject(e); }
+  Promise.resolve(p)
+    .then(function(){
+      return (screen.orientation && screen.orientation.lock)
+        ? screen.orientation.lock('landscape') : null;
+    })
+    .catch(function(){})
+    .then(function(){ setTimeout(function(){ fit(); checkOrient(); }, 350); });
+}
+
+/* 竖屏且没全屏时，盖一层「请横过来」*/
+function checkOrient(){
+  var portrait = innerHeight > innerWidth;
+  var full = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  $('rot').classList.toggle('on', portrait && !skipRot && !full);
+}
+
+addEventListener('resize', function(){ fit(); checkOrient(); });
+addEventListener('orientationchange', function(){ setTimeout(function(){ fit(); checkOrient(); }, 150); });
+document.addEventListener('fullscreenchange', function(){ setTimeout(function(){ fit(); checkOrient(); }, 250); });
 fit();
+checkOrient();
 reset();
 requestAnimationFrame(loop);
 </script>
