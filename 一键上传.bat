@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 title Pixel Rogue - Upload to GitHub
 cls
 echo.

@@ -1,4 +1,5 @@
 ﻿# 像素肉鸽 · 一键上传到 GitHub Pages
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 Set-Location -LiteralPath $PSScriptRoot
 
 function Line { Write-Host ("-" * 50) -ForegroundColor DarkGray }
