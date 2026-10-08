@@ -88,6 +88,12 @@
     手机：屏幕左下<b>◀ ▶</b> 移动，右下<b>跳</b><br>
     电脑：<b>A / D</b> 或 <b>← →</b> 移动，<b>空格</b> 跳
   </div>
+  <div class="sub" style="margin-top:2px;font-size:12px;line-height:1.85">
+    <b style="color:#ffe066">金色描边</b> = 精英怪（血厚、经验 ×3）<br>
+    <b style="color:#ff5566">头顶红点</b> = 那个怪还剩几条命<br>
+    <b style="color:#c77dff">污染值</b> = 每 10 级 +1，怪的基础数值 ×1.25（指数叠加）<br>
+    <b style="color:#ffd94a">黄帽窃贼</b> = 抢你经验球，抢满 5 秒就换一条命
+  </div>
   <button class="btn" id="bStart">开 始</button>
 </div>
 
@@ -136,6 +142,7 @@ let cam = 0, spawnT = 0, shake = 0;
 let announce = 0, announceTxt = '';
 let enemies = [], projs = [], eprojs = [], orbs = [], parts = [], texts = [];
 let pendingSpawns = [];
+let 特殊怪本波 = 0;      /* 每波重置：特殊怪上限 2 */
 let keys = {};
 
 /* ============================ 词条 ============================ */
@@ -185,10 +192,14 @@ function pickType(){
   if (wave >= 2) o.push('bat');
   if (wave >= 3) o.push('brute');
   if (wave >= 4) o.push('skull');
-  if (wave >= 5) o.push('thief');
-  if (wave >= 6) o.push('bat','brute','split');
-  if (wave >= 9) o.push('skull','brute','thief');
-  if (wave >= 13) o.push('split','brute','skull','thief');
+  if (wave >= 6) o.push('bat','brute');
+  if (wave >= 9) o.push('skull','brute');
+  if (wave >= 13) o.push('split','brute','skull');
+  /* 特殊怪（窃贼 / 分裂体）：每一波最多出 2 只 */
+  if (特殊怪本波 < 2){
+    if (wave >= 5) o.push('thief','thief');
+    if (wave >= 6) o.push('split');
+  }
   return pick(o);
 }
 
@@ -206,10 +217,11 @@ function reset(){
     iframe: 0, hitFlash: 0,
     level: 1, xp: 0, xpNeed: 10, perkHalf: 0,
     kills: 0, dmgDealt: 0, inv: {},
-    stage: 0, dr: 0,
+    污染: 0, dr: 0,
   });
   enemies = []; projs = []; eprojs = []; orbs = []; parts = []; texts = [];
   pendingSpawns = [];
+  特殊怪本波 = 0;
   wave = 1; waveT = 0; timeAlive = 0; pendingPerks = 0;
   shake = 0; spawnT = 0.5; announce = 2.0; announceTxt = '第 1 波';
   cam = clamp(P.x - W/2, 0, WORLD - W);
@@ -240,7 +252,7 @@ function addXp(v){
   while (P.xp >= P.xpNeed){
     P.xp -= P.xpNeed;
     P.level++;
-    P.xpNeed = Math.floor(P.xpNeed * 1.30 + 3);
+    P.xpNeed = Math.floor(P.xpNeed * 1.23 + 3);
     P.perkHalf = 0;
     pendingPerks++;
     addText(P.x, P.y - 30, 'Lv ' + P.level, '#7fd4ff');
@@ -250,14 +262,14 @@ function addXp(v){
     P.perkHalf = 1;
     pendingPerks++;
   }
-  const st = Math.floor(P.level / 20);
-  if (st > P.stage){
-    P.stage = st;
+  const pol = Math.floor(P.level / 10);
+  if (pol > (P.污染 || 0)){
+    P.污染 = pol;
     P.hp = P.maxHp;
-    announce = 2.8;
-    announceTxt = '第 ' + P.level + ' 级 · 难度跃升 ' + P.stage;
-    shake = 6;
-    addParts(P.x, P.y - 9, '#ff8a9a', 26, 170);
+    announce = 3.0;
+    announceTxt = '污染值 ' + P.污染 + '　怪的基础数值 ×' + Math.pow(1.25, P.污染).toFixed(2);
+    shake = 5;
+    addParts(P.x, P.y - 9, '#c77dff', 30, 180);
   }
   if (pendingPerks > 0 && state === 'play') openPerk();
 }
@@ -362,20 +374,20 @@ function die(){
 function spawnEnemy(type, opts){
   opts = opts || {};
   const t = type || pickType(), d = ET[t];
+  if (!opts.gen && (t === 'thief' || t === 'split')) 特殊怪本波++;
   const side = Math.random() < 0.5 ? -1 : 1;
   const x = (opts.x !== undefined)
           ? clamp(opts.x, 20, WORLD - 20)
           : clamp(P.x + side * (180 + rand(0,60)), 24, WORLD - 24);
 
-  /* 难度阶段：20 级起怪整体加码 */
-  const stg   = P.stage || 0;
-  const stgMul = 1 + 0.55 * stg;
-  /* 首领用较缓的指数，否则后期血量会爆炸 */
-  const hpS  = (opts.boss ? Math.pow(1.22, wave - 1) : Math.pow(1.30, wave - 1)) * stgMul;
-  const atkS = (1 + wave * 0.50) * (1 + 0.35 * stg);
-  const spdS = Math.min(2.1, 1 + wave * 0.03);
+  /* 污染值：每 10 级 +1。怪的基础血量/攻击 ×1.25^污染（指数叠加）*/
+  const pol = Math.pow(1.25, P.污染 || 0);
+  /* 每波的自然成长放得很缓 —— 难度主要交给污染值 */
+  const hpS  = (opts.boss ? Math.pow(1.15, wave - 1) : Math.pow(1.19, wave - 1)) * pol;
+  const atkS = Math.pow(1.085, wave - 1) * pol;
+  const spdS = Math.min(1.7, 1 + wave * 0.022);
 
-  const elite   = !opts.noElite && !opts.boss && P.level >= 20 && Math.random() < 0.30;
+  const elite   = !opts.noElite && !opts.boss && (P.污染 || 0) >= 2 && Math.random() < 0.28;
   const sizeMul = (opts.boss ? 2.1 : (elite ? 1.28 : 1)) * (opts.size || 1);
   const hpMul   = (opts.boss ? 20 : (elite ? 2.6 : 1)) * (opts.hpMul || 1);
 
@@ -391,11 +403,11 @@ function spawnEnemy(type, opts){
     fly: d.fly, ranged: d.ranged, cd: rand(0.8, 2.2),
     slowT: 0, poisonT: 0, hitT: 0, kb: 0, bob: rand(0, 6.28),
     off: rand(-15, 15),
-    xp: Math.max(1, Math.round((2 + wave * 1.3) * d.xp
+    xp: Math.max(1, Math.round((3 + wave * 1.9) * d.xp
         * (opts.boss ? 40 : (elite ? 3 : 1)) * (opts.xpMul || 1))),
     c1: d.c1, c2: d.c2, dead: false, face: 1,
     boss: !!opts.boss, elite: elite, gen: opts.gen || 0,
-    lives: opts.lives || 0, ate: 0, settle: 5, stolen: 0,
+    lives: opts.lives || 0, ate: 0, ateCycle: 0, settle: 5, stolen: 0,
   });
 }
 
@@ -501,16 +513,18 @@ function update(dt){
     /* 窃贼：优先扑向经验球，抢完再回来撞你 */
     if (e.type === 'thief'){
       let orb = null, bd = 1e9;
-      for (const o of orbs){
-        if (o.dead) continue;
-        const dd = Math.abs(o.x - e.x) + Math.abs(o.y - (e.y - e.h/2));
-        if (dd < bd){ bd = dd; orb = o; }
+      if (e.ateCycle < 2){                 /* 一个周期最多吞 2 个 */
+        for (const o of orbs){
+          if (o.dead) continue;
+          const dd = Math.abs(o.x - e.x) + Math.abs(o.y - (e.y - e.h/2));
+          if (dd < bd){ bd = dd; orb = o; }
+        }
       }
       if (orb){
         if (Math.abs(orb.x - e.x) > 2) dir = Math.sign(orb.x - e.x);
         if (bd < 13){
           orb.dead = true;
-          e.ate++; e.stolen += orb.val;
+          e.ate++; e.ateCycle++; e.stolen += orb.val;
           addText(e.x, e.y - e.h - 6, '偷+1', '#ffd94a');
           addParts(orb.x, orb.y, '#ffd94a', 5, 70);
         }
@@ -522,6 +536,7 @@ function update(dt){
       e.settle -= dt;
       if (e.settle <= 0){
         e.settle = 5;
+        e.ateCycle = 0;                    /* 开新周期，又能吞 2 个 */
         if (e.ate > 0){
           const add = Math.min(e.boss ? 1 : 3, Math.max(1, Math.ceil(e.ate / 2)));
           e.ate = 0;
@@ -622,6 +637,7 @@ function update(dt){
   waveT += dt;
   if (waveT >= 20){
     waveT -= 20; wave++;
+    特殊怪本波 = 0;
     announce = 2.2; announceTxt = '第 ' + wave + ' 波';
     if (wave % 10 === 0){
       announce = 3.0;
@@ -632,9 +648,9 @@ function update(dt){
 
   /* ---- 刷怪 ---- */
   spawnT -= dt;
-  const cap = Math.min(28, 5 + wave * 2);
+  const cap = Math.min(16, 4 + wave);          /* 场上同时存在的怪：最多 16 */
   if (spawnT <= 0 && enemies.length < cap){
-    spawnT = Math.max(0.34, 1.6 - wave * 0.075);
+    spawnT = Math.max(0.72, 1.85 - wave * 0.05);
     spawnEnemy();
   }
 
@@ -804,6 +820,14 @@ function drawHUD(){
   ctx.fillText('Lv ' + P.level, 103, 15);
   ctx.fillStyle = '#8d9bc4'; ctx.font = '8px monospace';
   ctx.fillText('词条 ' + perkCount(), 103, 25);
+  /* 污染值：每 10 级 +1 */
+  const polN = P.污染 || 0;
+  ctx.fillStyle = polN > 0 ? '#c77dff' : '#3f4870';
+  ctx.font = 'bold 10px monospace';
+  ctx.fillText('污染 ' + polN, 148, 15);
+  ctx.fillStyle = polN > 0 ? '#8a5fb0' : '#3f4870';
+  ctx.font = '7px monospace';
+  ctx.fillText('怪 ×' + Math.pow(1.25, polN).toFixed(2), 148, 25);
 
   /* 右上 */
   ctx.textAlign = 'right';
@@ -812,10 +836,6 @@ function drawHUD(){
   ctx.fillStyle = '#8d9bc4'; ctx.font = '8px monospace';
   ctx.fillText(Math.floor(timeAlive/60) + ':' + ('0' + Math.floor(timeAlive%60)).slice(-2)
                + '　击杀 ' + P.kills, W - 6, 25);
-  if (P.stage > 0){
-    ctx.fillStyle = '#ff8a9a'; ctx.font = 'bold 8px monospace';
-    ctx.fillText('难度阶段 ' + P.stage, W - 6, 36);
-  }
 
   /* 波次提示 */
   if (announce > 0){
