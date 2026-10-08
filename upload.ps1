@@ -51,6 +51,19 @@ Write-Host ""
 
 git push -u origin main
 
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ""
+    Write-Host "第一次推送被拒绝了。" -ForegroundColor Yellow
+    Write-Host "最常见的原因：你建仓库的时候勾了 Add a README。" -ForegroundColor Yellow
+    Write-Host "那样远程就不是空的，git 不让你覆盖它。" -ForegroundColor Yellow
+    Write-Host ""
+    $ans = Read-Host "要用你本地的版本覆盖远程吗？（远程那个 README 会被删掉）输入 Y 确认"
+    if ($ans -eq 'Y' -or $ans -eq 'y') {
+        Write-Host "正在强制推送..." -ForegroundColor Yellow
+        git push -u origin main --force
+    }
+}
+
 if ($LASTEXITCODE -eq 0) {
     Write-Host ""
     Line
