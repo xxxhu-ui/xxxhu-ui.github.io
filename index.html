@@ -11,7 +11,7 @@
     font-family:"Microsoft YaHei","PingFang SC",sans-serif;color:#e8ecff;
     user-select:none;-webkit-user-select:none;touch-action:none}
   #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
-  canvas{image-rendering:pixelated;image-rendering:crisp-edges;display:block;
+  canvas{display:block;
     box-shadow:0 0 0 2px #232a44,0 0 40px #000;background:#05070f}
   .ov{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;
     justify-content:center;padding:20px;background:rgba(4,6,14,.9);z-index:20;overflow:auto}
@@ -1113,18 +1113,20 @@ $('bRot').onclick   = function(){ goFull(); };
 $('bSkip').onclick  = function(){ skipRot = true; checkOrient(); };
 
 /* ============================ 自适应 ============================ */
-/* 关键：后备缓冲按整数倍放大，字体就有 k 倍的字形分辨率，
-   同时逻辑坐标还是 320x180，像素画的味道不变 */
+/* 显示尺寸：照旧铺满屏幕（不用整数倍，否则手机横屏会缩成邮票）
+   后备缓冲：按屏幕物理像素渲染，所以字体是原生清晰度
+   逻辑坐标：仍然是 320x180，像素画的味道不变 */
 function fit(){
-  const s = Math.min(innerWidth / W, innerHeight / H);
-  const k = Math.max(1, Math.min(4, Math.floor(s)));
+  const s  = Math.max(0.6, Math.min(innerWidth / W, innerHeight / H));
+  const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  const k  = Math.max(1, Math.min(8, Math.ceil(s * dpr)));
   cv.width  = W * k;
   cv.height = H * k;
-  cv.style.width  = (W * k) + 'px';
-  cv.style.height = (H * k) + 'px';
+  cv.style.width  = Math.round(W * s) + 'px';
+  cv.style.height = Math.round(H * s) + 'px';
   ctx.imageSmoothingEnabled = false;
-  ctx.setTransform(k, 0, 0, k, 0, 0);      /* 所有绘制仍用 320x180 坐标 */
-  document.documentElement.style.setProperty('--s', k);
+  ctx.setTransform(k, 0, 0, k, 0, 0);
+  document.documentElement.style.setProperty('--s', Math.max(1, Math.min(4, s)));
 }
 let skipRot = false;
 
