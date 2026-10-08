@@ -65,10 +65,77 @@
   #rot .t2{font-size:13px;color:#7d8cb5;line-height:1.9;margin-top:16px}
   #rot .t2 b{color:#7fd4ff}
   #rot .sk{text-decoration:underline;cursor:pointer;margin-top:22px}
+
+  /* ===== HUD：画在 DOM 上，字体永远是原生清晰度 ===== */
+  #frame{position:relative;display:inline-block;line-height:0;
+         font-size:calc(var(--s,2) * 6.2px)}
+  #hud{position:absolute;top:0;left:0;right:0;display:flex;align-items:flex-start;
+       gap:.55em;padding:.5em .6em;pointer-events:none;z-index:12;
+       font-family:"Microsoft YaHei","PingFang SC",sans-serif;line-height:1.25}
+  #bPause{pointer-events:auto;flex:0 0 auto;width:2.5em;height:2.5em;padding:0;
+          border-radius:.32em;border:1.5px solid #3a4a86;background:rgba(16,22,42,.8);
+          color:#cfe0ff;font-size:.75em;font-family:inherit;letter-spacing:.1em;
+          display:flex;align-items:center;justify-content:center}
+  #bPause:active{background:rgba(127,212,255,.35);border-color:#7fd4ff}
+  #hudL{display:flex;flex-direction:column;gap:.22em;width:19em}
+  #hud .bar{position:relative;height:1.3em;border-radius:.22em;background:rgba(0,0,0,.62);
+            overflow:hidden;box-shadow:0 0 0 1px rgba(90,108,160,.55)}
+  #hud .bar i{display:block;height:100%;width:0;transition:width .08s linear}
+  #hud .bar i.hp{background:linear-gradient(#ff9aa8,#d02a44)}
+  #hud .bar i.xp{background:linear-gradient(#a8ecff,#2b93c6)}
+  #hud .bar span{position:absolute;inset:0;text-align:center;font-size:.72em;
+                 line-height:1.8em;color:#fff;font-weight:bold;
+                 text-shadow:0 1px 2px #000,0 0 3px #000}
+  #hud .xpbar{height:.75em}
+  #hud .xpbar.floor{box-shadow:0 0 0 1px #ffe066,0 0 .5em #ffe066}
+  #hud .row{display:flex;gap:.7em;align-items:baseline;font-size:.8em;color:#94a2c8;
+            text-shadow:0 1px 3px #000,0 0 4px #000}
+  #hud .row .lv{color:#ffe066;font-weight:bold;font-size:1.25em}
+  #hud .row .pol,#hud .row .polx{color:#3f4870}
+  #hud .row .pol.on{color:#c77dff;font-weight:bold}
+  #hud .row .polx.on{color:#9a6fc0}
+  #hudR{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:.1em;
+        text-shadow:0 1px 3px #000,0 0 4px #000}
+  #hudR #hWave{color:#cfe0ff;font-weight:bold;font-size:1.15em}
+  #hudR #hTime{color:#94a2c8;font-size:.8em}
+  #ann{position:absolute;left:0;right:0;top:26%;text-align:center;pointer-events:none;
+       font-size:2.1em;font-weight:bold;color:#ffe066;letter-spacing:.12em;opacity:0;
+       text-shadow:0 0 .5em #7a5200,0 .08em .1em #000,0 0 .2em #000;
+       font-family:"Microsoft YaHei","PingFang SC",sans-serif;line-height:1.3}
+  #ann.show{animation:annPop 2.6s ease-out}
+  @keyframes annPop{0%{opacity:0;transform:scale(.72)}10%{opacity:1;transform:scale(1)}
+    72%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.06)}}
+  /* ===== 暂停菜单 ===== */
+  #pause{z-index:50;gap:0}
+  #pause h2{margin-bottom:22px}
+  #pause .btn{min-width:11em;margin:6px 0}
+  .btn.ghost{background:#232c4a;color:#cfe0ff;box-shadow:inset 0 0 0 1.5px #46568e}
 </style>
 </head>
 <body>
-<div id="stage"><canvas id="cv" width="320" height="180"></canvas></div>
+<div id="stage">
+  <div id="frame">
+    <canvas id="cv" width="320" height="180"></canvas>
+    <div id="hud">
+      <button id="bPause">❚❚</button>
+      <div id="hudL">
+        <div class="bar"><i id="hpFill" class="hp"></i><span id="hpTxt"></span></div>
+        <div class="bar xpbar" id="xpBar"><i id="xpFill" class="xp"></i></div>
+        <div class="row">
+          <span id="hLv" class="lv"></span>
+          <span id="hPerk"></span>
+          <span id="hPol" class="pol"></span>
+          <span id="hPolX" class="polx"></span>
+        </div>
+      </div>
+      <div id="hudR">
+        <span id="hWave"></span>
+        <span id="hTime"></span>
+      </div>
+    </div>
+    <div id="ann"></div>
+  </div>
+</div>
 
 <div id="pad">
   <div class="grp">
@@ -109,6 +176,12 @@
   <button class="btn" id="bAgain">再 来 一 次</button>
 </div>
 
+<div id="pause" class="ov hide">
+  <h2>暂 停</h2>
+  <button class="btn" id="bResume">继 续 游 戏</button>
+  <button class="btn ghost" id="bQuit">退 出 游 戏</button>
+</div>
+
 <div id="rot">
   <div class="ph">📱</div>
   <div class="t1">把手机<b>横过来</b>玩</div>
@@ -139,10 +212,11 @@ let state = 'start';
 let pendingPerks = 0;
 let wave = 1, waveT = 0, timeAlive = 0;
 let cam = 0, spawnT = 0, shake = 0;
-let announce = 0, announceTxt = '';
+let announce = 0;
 let enemies = [], projs = [], eprojs = [], orbs = [], parts = [], texts = [];
 let pendingSpawns = [];
 let 特殊怪本波 = 0;      /* 每波重置：特殊怪上限 2 */
+let waves = [];          /* 首领的地面震荡波 */
 let keys = {};
 
 /* ============================ 词条 ============================ */
@@ -151,9 +225,9 @@ const PERKS = [
   {id:'aspd',  n:'疾风', d:'攻击速度 +16%',         f:()=>P.atkInterval *= 0.862},
   {id:'crit',  n:'锐眼', d:'暴击率 +7%',           f:()=>P.crit = Math.min(1, P.crit + 0.07)},
   {id:'cdmg',  n:'致命', d:'暴击伤害 +35%',         f:()=>P.critDmg += 0.35},
-  {id:'hp',    n:'铁壁', d:'最大生命 +26，并立即回复', f:()=>{P.maxHp += 26; P.hp += 26;}},
-  {id:'regen', n:'再生', d:'每秒回血 +1.3',         f:()=>P.regen += 1.3},
-  {id:'dr',    n:'韧性', d:'受到的伤害 -8%', max:6,  f:()=>P.dr = Math.min(0.55, P.dr + 0.08)},
+  {id:'hp',    n:'铁壁', d:'最大生命 +38，并立即回复', f:()=>{P.maxHp += 38; P.hp += 38;}},
+  {id:'regen', n:'再生', d:'每秒回血 +1.6',         f:()=>P.regen += 1.6},
+  {id:'dr',    n:'韧性', d:'受到的伤害 -10%', max:6, f:()=>P.dr = Math.min(0.62, P.dr + 0.10)},
   {id:'move',  n:'迅捷', d:'移动速度 +11%',         f:()=>P.speed *= 1.11},
   {id:'ls',    n:'嗜血', d:'吸血 +4.5%',           f:()=>P.lifesteal += 0.045},
   {id:'proj',  n:'分裂', d:'投射物 +1（弹道自动收拢）', max:5, f:()=>P.projCount += 1},
@@ -207,7 +281,7 @@ function pickType(){
 function reset(){
   Object.assign(P, {
     x: WORLD/2, y: GROUND, vy: 0, onGround: true, facing: 1,
-    hp: 100, maxHp: 100,
+    hp: 130, maxHp: 130,
     atk: 7, atkInterval: 0.62, atkTimer: 0,
     crit: 0.05, critDmg: 1.5, speed: 78,
     lifesteal: 0, regen: 0, projCount: 1, projSpeed: 250, range: 132,
@@ -217,13 +291,14 @@ function reset(){
     iframe: 0, hitFlash: 0,
     level: 1, xp: 0, xpNeed: 10, perkHalf: 0,
     kills: 0, dmgDealt: 0, inv: {},
-    污染: 0, dr: 0,
+    污染: 0, dr: 0, 无升级秒: 0,
   });
   enemies = []; projs = []; eprojs = []; orbs = []; parts = []; texts = [];
   pendingSpawns = [];
   特殊怪本波 = 0;
+  waves = [];
   wave = 1; waveT = 0; timeAlive = 0; pendingPerks = 0;
-  shake = 0; spawnT = 0.5; announce = 2.0; announceTxt = '第 1 波';
+  shake = 0; spawnT = 0.5; announce = 0;
   cam = clamp(P.x - W/2, 0, WORLD - W);
   keys = {};
 }
@@ -253,6 +328,7 @@ function addXp(v){
     P.xp -= P.xpNeed;
     P.level++;
     P.xpNeed = Math.floor(P.xpNeed * 1.23 + 3);
+    P.无升级秒 = 0;
     P.perkHalf = 0;
     pendingPerks++;
     addText(P.x, P.y - 30, 'Lv ' + P.level, '#7fd4ff');
@@ -266,8 +342,7 @@ function addXp(v){
   if (pol > (P.污染 || 0)){
     P.污染 = pol;
     P.hp = P.maxHp;
-    announce = 3.0;
-    announceTxt = '污染值 ' + P.污染 + '　怪的基础数值 ×' + Math.pow(1.25, P.污染).toFixed(2);
+    播报('污染值 ' + P.污染 + '　怪的基础数值 ×' + Math.pow(1.25, P.污染).toFixed(2));
     shake = 5;
     addParts(P.x, P.y - 9, '#c77dff', 30, 180);
   }
@@ -383,17 +458,23 @@ function spawnEnemy(type, opts){
   /* 污染值：每 10 级 +1。怪的基础血量/攻击 ×1.25^污染（指数叠加）*/
   const pol = Math.pow(1.25, P.污染 || 0);
   /* 每波的自然成长放得很缓 —— 难度主要交给污染值 */
-  const hpS  = (opts.boss ? Math.pow(1.15, wave - 1) : Math.pow(1.19, wave - 1)) * pol;
-  const atkS = Math.pow(1.085, wave - 1) * pol;
+  const hpS  = Math.pow(1.10, wave - 1) * pol;
+  const atkS = Math.pow(1.055, wave - 1) * pol;
   const spdS = Math.min(1.7, 1 + wave * 0.022);
 
   const elite   = !opts.noElite && !opts.boss && (P.污染 || 0) >= 2 && Math.random() < 0.28;
   const sizeMul = (opts.boss ? 2.1 : (elite ? 1.28 : 1)) * (opts.size || 1);
-  const hpMul   = (opts.boss ? 20 : (elite ? 2.6 : 1)) * (opts.hpMul || 1);
+  const hpMul   = (opts.boss ? 12 : (elite ? 2.6 : 1)) * (opts.hpMul || 1);
 
   const w  = Math.max(6, Math.round(d.w * sizeMul));
   const h  = Math.max(6, Math.round(d.h * sizeMul));
-  const hp = Math.max(1, Math.round(d.hp * hpS * hpMul));
+  /* 首领的血量按玩家当前 DPS 来定 —— 保证它一定会被打死，
+     不会像以前那样从第 20 波拖到第 30 波 */
+  const 玩家DPS = (P.atk * P.projCount * (1 + P.crit * (P.critDmg - 1))
+                   / P.atkInterval) || 10;
+  const hp = opts.boss
+      ? Math.max(300, Math.round(玩家DPS * 12))
+      : Math.max(1, Math.round(d.hp * hpS * hpMul));
 
   enemies.push({
     type: t, x, y: d.fly ? GROUND - 40 : GROUND, w, h,
@@ -407,7 +488,8 @@ function spawnEnemy(type, opts){
         * (opts.boss ? 40 : (elite ? 3 : 1)) * (opts.xpMul || 1))),
     c1: d.c1, c2: d.c2, dead: false, face: 1,
     boss: !!opts.boss, elite: elite, gen: opts.gen || 0,
-    lives: opts.lives || 0, ate: 0, ateCycle: 0, settle: 5, stolen: 0,
+    lives: opts.lives || 0, gained: 0, ate: 0, ateCycle: 0, settle: 5, stolen: 0,
+    ult: 0, ultCd: rand(7, 11),
   });
 }
 
@@ -450,6 +532,13 @@ function update(dt){
       P.shieldT = 0; P.shield++;
       addText(P.x, P.y - 32, '+盾', '#7fd4ff');
     }
+  }
+
+  /* 保底经验：60 秒没升级就开始自己涨，最多 2 分钟一定升一级
+     （后期打不动怪的时候，不至于卡级卡死）*/
+  P.无升级秒 += dt;
+  if (P.无升级秒 >= 60){
+    addXp((P.xpNeed / 60) * dt / P.xpGain);
   }
 
   /* ---- 自动攻击 ---- */
@@ -538,14 +627,19 @@ function update(dt){
         e.settle = 5;
         e.ateCycle = 0;                    /* 开新周期，又能吞 2 个 */
         if (e.ate > 0){
-          const add = Math.min(e.boss ? 1 : 3, Math.max(1, Math.ceil(e.ate / 2)));
+          const room = 7 - (e.gained || 0);      /* 靠吸经验最多加 7 条命 */
+          const add = Math.min(room,
+                      Math.min(e.boss ? 1 : 3, Math.max(1, Math.ceil(e.ate / 2))));
           e.ate = 0;
-          e.lives += add;
-          e.maxHp = Math.round(e.maxHp * 1.15); e.hp = e.maxHp;
-          e.w = Math.round(e.w * 1.07); e.h = Math.round(e.h * 1.07);
-          addText(e.x, e.y - e.h - 12, '命 +' + add, '#ff8a9a');
-          addParts(e.x, e.y - e.h/2, '#ff5566', 14, 120);
-          shake = Math.max(shake, 3);
+          if (add > 0){
+            e.lives += add;
+            e.gained = (e.gained || 0) + add;
+            e.maxHp = Math.round(e.maxHp * 1.15); e.hp = e.maxHp;
+            e.w = Math.round(e.w * 1.07); e.h = Math.round(e.h * 1.07);
+            addText(e.x, e.y - e.h - 12, '命 +' + add, '#ff8a9a');
+            addParts(e.x, e.y - e.h/2, '#ff5566', 14, 120);
+            shake = Math.max(shake, 3);
+          }
         }
       }
     } else if (e.ranged){
@@ -574,6 +668,36 @@ function update(dt){
       }
     }
 
+    /* 首领大招：烧掉自己一条命，放一圈弹幕 + 左右地面震荡波（跳起来才能躲）*/
+    if (e.boss){
+      if (e.ult > 0){
+        e.ult -= dt;
+        if (Math.random() < dt * 26) addParts(e.x, e.y - e.h/2, '#ffd94a', 3, 130);
+        if (e.ult <= 0){
+          for (let k = 0; k < 18; k++){
+            const a2 = (k / 18) * Math.PI * 2;
+            eprojs.push({x: e.x, y: e.y - e.h/2,
+                         vx: Math.cos(a2)*115, vy: Math.sin(a2)*115,
+                         dmg: e.atk * 0.9, life: 4.5, dead: false});
+          }
+          waves.push({x: e.x, dir:  1, spd: 330, life: 2.6, dmg: e.atk * 1.5, hit: false, dead: false});
+          waves.push({x: e.x, dir: -1, spd: 330, life: 2.6, dmg: e.atk * 1.5, hit: false, dead: false});
+          shake = 9;
+          addParts(e.x, e.y - e.h/2, '#ffd94a', 34, 240);
+          播报('首领爆发！');
+        }
+      } else {
+        e.ultCd -= dt;
+        if (e.ultCd <= 0 && e.lives >= 1){
+          e.lives--;
+          e.ult = 1.3;
+          e.ultCd = rand(11, 15);
+          addText(e.x, e.y - e.h - 14, '献祭 1 命', '#ff8a9a');
+          播报('首领献祭一条命 · 蓄力大招');
+        }
+      }
+    }
+
     /* 接触伤害 */
     if (Math.abs(e.x - P.x) < e.w/2 + 4 && e.y > P.y - 18 && e.y - e.h < P.y){
       if (P.iframe <= 0){
@@ -597,6 +721,19 @@ function update(dt){
   }
   eprojs = eprojs.filter(p => !p.dead);
   enemies = enemies.filter(e => !e.dead);
+
+  /* 地面震荡波：站在地上会被打到，跳起来能躲开 */
+  for (const wv of waves){
+    wv.x += wv.dir * wv.spd * dt;
+    wv.life -= dt;
+    if (!wv.hit && Math.abs(wv.x - P.x) < 10 && P.y > GROUND - 14){
+      wv.hit = true;
+      damagePlayer(wv.dmg);
+    }
+    if (wv.life <= 0 || wv.x < cam - 90 || wv.x > cam + W + 90) wv.dead = true;
+  }
+  waves = waves.filter(wv => !wv.dead);
+
   while (pendingSpawns.length){
     const q = pendingSpawns.shift();
     spawnEnemy(q.type, q.opts);
@@ -638,19 +775,33 @@ function update(dt){
   if (waveT >= 20){
     waveT -= 20; wave++;
     特殊怪本波 = 0;
-    announce = 2.2; announceTxt = '第 ' + wave + ' 波';
+    播报('第 ' + wave + ' 波');
     if (wave % 10 === 0){
-      announce = 3.0;
-      announceTxt = '第 ' + wave + ' 波 · 首领来袭';
-      spawnEnemy('thief', {boss: true, lives: 3 + Math.floor(wave/10) * 2, noElite: true});
+      播报('第 ' + wave + ' 波 · 首领来袭');
+      /* 上一只首领还赖着不走？让它把经验吐出来再退场 */
+      let 有首领 = false;
+      for (const e of enemies){
+        if (e.boss && !e.dead){
+          有首领 = true;
+          e.dead = true;
+          orbs.push({x: e.x, y: e.y - e.h/2, vy: rand(-70,-25), vx: rand(-30,30),
+                     val: e.xp + (e.stolen || 0), life: 26, dead: false});
+          addParts(e.x, e.y - e.h/2, '#ffd94a', 30, 200);
+        }
+      }
+      if (有首领){
+        enemies = enemies.filter(e => !e.dead);
+        播报('旧首领退场 · 新首领登场');
+      }
+      spawnEnemy('thief', {boss: true, lives: 2 + Math.floor(wave/10), noElite: true});
     }
   }
 
   /* ---- 刷怪 ---- */
   spawnT -= dt;
-  const cap = Math.min(16, 4 + wave);          /* 场上同时存在的怪：最多 16 */
+  const cap = Math.min(13, 3 + wave);          /* 场上同时存在的怪：最多 13 */
   if (spawnT <= 0 && enemies.length < cap){
-    spawnT = Math.max(0.72, 1.85 - wave * 0.05);
+    spawnT = Math.max(0.85, 1.95 - wave * 0.05);
     spawnEnemy();
   }
 
@@ -802,51 +953,43 @@ function drawEnemy(e){
   if (e.poisonT > 0) px(x - 1, y - h - 10, 2, 2, '#8cd94a');
 }
 
-function drawHUD(){
-  /* 血条 */
-  px(6, 6, 92, 8, 'rgba(0,0,0,.6)');
-  px(7, 7, 90 * clamp(P.hp/P.maxHp,0,1), 6, '#e0455a');
-  px(7, 7, 90 * clamp(P.hp/P.maxHp,0,1), 2, '#ff8a9a');
-  ctx.fillStyle = '#fff'; ctx.font = '8px monospace'; ctx.textAlign = 'center';
-  ctx.fillText(Math.ceil(P.hp) + ' / ' + P.maxHp, 52, 14);
-  /* 经验条 */
-  px(6, 17, 92, 5, 'rgba(0,0,0,.6)');
-  px(7, 18, 90 * clamp(P.xp/P.xpNeed,0,1), 3, '#7fd4ff');
-  /* 半级刻度 */
-  px(52, 17, 1, 5, 'rgba(255,255,255,.5)');
-  /* 等级 */
-  ctx.textAlign = 'left';
-  ctx.fillStyle = '#ffe066'; ctx.font = 'bold 11px monospace';
-  ctx.fillText('Lv ' + P.level, 103, 15);
-  ctx.fillStyle = '#8d9bc4'; ctx.font = '8px monospace';
-  ctx.fillText('词条 ' + perkCount(), 103, 25);
-  /* 污染值：每 10 级 +1 */
-  const polN = P.污染 || 0;
-  ctx.fillStyle = polN > 0 ? '#c77dff' : '#3f4870';
-  ctx.font = 'bold 10px monospace';
-  ctx.fillText('污染 ' + polN, 148, 15);
-  ctx.fillStyle = polN > 0 ? '#8a5fb0' : '#3f4870';
-  ctx.font = '7px monospace';
-  ctx.fillText('怪 ×' + Math.pow(1.25, polN).toFixed(2), 148, 25);
-
-  /* 右上 */
-  ctx.textAlign = 'right';
-  ctx.fillStyle = '#cfe0ff'; ctx.font = 'bold 11px monospace';
-  ctx.fillText('第 ' + wave + ' 波', W - 6, 14);
-  ctx.fillStyle = '#8d9bc4'; ctx.font = '8px monospace';
-  ctx.fillText(Math.floor(timeAlive/60) + ':' + ('0' + Math.floor(timeAlive%60)).slice(-2)
-               + '　击杀 ' + P.kills, W - 6, 25);
-
-  /* 波次提示 */
-  if (announce > 0){
-    const a = Math.min(1, announce);
-    ctx.globalAlpha = a;
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#ffe066'; ctx.font = 'bold 22px "Microsoft YaHei",sans-serif';
-    ctx.fillText(announceTxt, W/2, 66);
-    ctx.globalAlpha = 1;
-  }
-  ctx.textAlign = 'left';
+/* ============================ HUD：全部用 DOM 画，字体清晰 ============================ */
+const HUD = {
+  hp: $('hpFill'), hpT: $('hpTxt'), xp: $('xpFill'), xpBar: $('xpBar'), hud: $('hud'),
+  lv: $('hLv'), perk: $('hPerk'), pol: $('hPol'), polx: $('hPolX'),
+  wave: $('hWave'), time: $('hTime'), ann: $('ann'),
+};
+function 设文(el, v){ if (el && el._v !== v){ el._v = v; el.textContent = v; } }
+function 设宽(el, r){
+  const v = Math.round(clamp(r, 0, 1) * 1000) / 10;
+  if (el && el._w !== v){ el._w = v; el.style.width = v + '%'; }
+}
+/* 大字播报（波次 / 污染 / 首领），用 CSS 动画 */
+function 播报(t){
+  const a = HUD.ann;
+  if (!a || a._t === t && a.classList.contains('show')) return;
+  a._t = t;
+  a.textContent = t;
+  a.classList.remove('show');
+  void a.offsetWidth;
+  a.classList.add('show');
+}
+function syncHUD(){
+  设宽(HUD.hp, P.hp / P.maxHp);
+  设宽(HUD.xp, P.xp / P.xpNeed);
+  设文(HUD.hpT, Math.ceil(P.hp) + ' / ' + P.maxHp);
+  设文(HUD.lv, 'Lv ' + P.level);
+  设文(HUD.perk, '词条 ' + perkCount());
+  const pn = P.污染 || 0;
+  设文(HUD.pol, '污染 ' + pn);
+  设文(HUD.polx, '怪 ×' + Math.pow(1.25, pn).toFixed(2));
+  HUD.pol.classList.toggle('on', pn > 0);
+  HUD.polx.classList.toggle('on', pn > 0);
+  设文(HUD.wave, '第 ' + wave + ' 波');
+  设文(HUD.time, Math.floor(timeAlive/60) + ':' + ('0' + Math.floor(timeAlive%60)).slice(-2)
+                 + ' · 击杀 ' + P.kills);
+  HUD.xpBar.classList.toggle('floor', (P.无升级秒 || 0) >= 60);
+  HUD.hud.classList.toggle('hide', state === 'start');
 }
 
 function render(){
@@ -862,6 +1005,13 @@ function render(){
   for (const o of orbs){
     px(o.x - 2, o.y - 2, 4, 4, '#1b6f9e');
     px(o.x - 1, o.y - 1, 2, 2, '#9fe8ff');
+  }
+  for (const wv of waves){
+    ctx.globalAlpha = clamp(wv.life / 2.6, 0, 1);
+    px(wv.x - 3, GROUND - 36, 6, 36, '#ffd94a');
+    px(wv.x - 7, GROUND - 24, 14, 24, '#ff8a4c');
+    px(wv.x - 10, GROUND - 12, 20, 12, '#ff5566');
+    ctx.globalAlpha = 1;
   }
   for (const e of enemies) if (e.x > cam - 40 && e.x < cam + W + 40) drawEnemy(e);
   for (const p of projs){
@@ -880,14 +1030,14 @@ function render(){
   for (const t of texts){
     ctx.globalAlpha = clamp(t.life / 0.75, 0, 1);
     ctx.fillStyle = t.color;
-    ctx.font = 'bold 8px monospace';
+    ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'center';
     ctx.fillText(t.s, t.x, t.y);
   }
   ctx.globalAlpha = 1;
   ctx.textAlign = 'left';
   ctx.restore();
-  drawHUD();
+  syncHUD();
   ctx.restore();
 }
 
@@ -904,6 +1054,11 @@ function loop(t){
 
 /* ============================ 输入 ============================ */
 addEventListener('keydown', e => {
+  if (e.code === 'Escape'){
+    if (state === 'play') 暂停();
+    else if (state === 'pause') 继续游戏();
+    return;
+  }
   if (e.code === 'KeyA' || e.code === 'ArrowLeft')  keys.left  = true;
   if (e.code === 'KeyD' || e.code === 'ArrowRight') keys.right = true;
   if (e.code === 'Space' || e.code === 'KeyW' || e.code === 'ArrowUp'){
@@ -930,16 +1085,46 @@ function bindHold(id, name){
 }
 bindHold('bL','left'); bindHold('bR','right'); bindHold('bJ','jump');
 
-$('bStart').onclick = function(){ skipRot = true; goFull(); startGame(); };
+/* ============================ 暂停 ============================ */
+function 暂停(){
+  if (state !== 'play') return;
+  state = 'pause'; keys = {};
+  $('pause').classList.remove('hide');
+}
+function 继续游戏(){
+  if (state !== 'pause') return;
+  $('pause').classList.add('hide');
+  state = 'play';
+}
+function 退出游戏(){
+  $('pause').classList.add('hide');
+  $('perk').classList.add('hide');
+  $('dead').classList.add('hide');
+  state = 'start';
+  $('start').classList.remove('hide');
+}
+$('bPause').onclick  = 暂停;
+$('bResume').onclick = 继续游戏;
+$('bQuit').onclick   = 退出游戏;
+
+$('bStart').onclick = function(){ skipRot = true; goFull(); startGame(); 播报('第 1 波'); };
 $('bAgain').onclick = function(){ goFull(); startGame(); };
 $('bRot').onclick   = function(){ goFull(); };
 $('bSkip').onclick  = function(){ skipRot = true; checkOrient(); };
 
 /* ============================ 自适应 ============================ */
+/* 关键：后备缓冲按整数倍放大，字体就有 k 倍的字形分辨率，
+   同时逻辑坐标还是 320x180，像素画的味道不变 */
 function fit(){
-  const s = Math.max(0.6, Math.min(innerWidth / W, innerHeight / H));
-  cv.style.width  = Math.floor(W * s) + 'px';
-  cv.style.height = Math.floor(H * s) + 'px';
+  const s = Math.min(innerWidth / W, innerHeight / H);
+  const k = Math.max(1, Math.min(4, Math.floor(s)));
+  cv.width  = W * k;
+  cv.height = H * k;
+  cv.style.width  = (W * k) + 'px';
+  cv.style.height = (H * k) + 'px';
+  ctx.imageSmoothingEnabled = false;
+  ctx.setTransform(k, 0, 0, k, 0, 0);      /* 所有绘制仍用 320x180 坐标 */
+  document.documentElement.style.setProperty('--s', k);
 }
 let skipRot = false;
 
