@@ -167,7 +167,8 @@
     每升<b>半级</b>给一个词条，越往后升级越慢<br>
     但怪也越强、经验越多<br><br>
     手机：屏幕左下<b>◀ ▶</b> 移动，右下<b>跳</b><br>
-    电脑：<b>A / D</b> 或 <b>← →</b> 移动，<b>空格</b> 跳
+    电脑：<b>A / D</b> 或 <b>← →</b> 移动，<b>空格</b> 跳<br>
+    <b>M</b> 音效开关　<b>N</b> 打击感强弱（手机在暂停菜单里）
   </div>
   <div class="sub" style="margin-top:2px;font-size:12px;line-height:1.85">
     <b style="color:#ffe066">金色描边</b> = 精英怪（血厚、经验 ×3）<br>
@@ -203,6 +204,11 @@
   <h2>暂 停</h2>
   <button class="btn" id="bResume">继 续 游 戏</button>
   <button class="btn ghost" id="bQuit">退 出 游 戏</button>
+  <div style="display:flex;gap:10px;margin-top:4px">
+    <button class="btn ghost" id="bSfx" style="min-width:9em;font-size:14px">音效：开</button>
+    <button class="btn ghost" id="bFx"  style="min-width:9em;font-size:14px">打击感：强</button>
+  </div>
+  <div style="font-size:12px;color:#6b7ba8">电脑上也可以按 <b>M</b>（音效）/ <b>N</b>（打击感）切换</div>
 </div>
 
 <div id="rot">
@@ -695,6 +701,8 @@ function 武器开火(w, 目){
     }
   }
   addParts(P.x, P.y - 32, '#7fffd4', 6, 95);
+  响(rand(300, 360), 0.055, 'triangle', 0.024, 170);
+  呼(0.06, 0.018, 1100, 400);
 }
 
 /* ============================ 30 级 · 唯一词条 六选一 ============================ */
@@ -725,6 +733,7 @@ function 定唯一(id){
 /* ============================ 词条面板 ============================ */
 function openPerk(){
   state = 'perk'; keys = {};
+  响(880, 0.14, 'triangle', 0.040, 1320);
   const box = $('cards'); box.innerHTML = '';
   perkOptions().forEach(o => {
     const st = P.inv[o.id] || 0;
@@ -768,6 +777,16 @@ function hurtEnemy(e, d, isCrit){
   e.hp -= d;
   P.dmgDealt += d;
   e.hitT = 0.09;
+  /* ── 打击感：命中是「闷响」，暴击是「脆响 + 顿一下」 ── */
+  if (timeAlive - 上次命中声 > 0.06){
+    上次命中声 = timeAlive;
+    呼(0.045, isCrit ? 0.045 : 0.026, isCrit ? 2600 : 1600, 700);
+    if (isCrit) 响(rand(1150, 1350), 0.055, 'triangle', 0.026, 2000);
+  }
+  if (isCrit && 特效){
+    shake = Math.max(shake, 1.6);
+    if (定帧 <= 0 && timeAlive - 上次定帧 > 0.30){ 定帧 = 0.022; 上次定帧 = timeAlive; }
+  }
   addText(e.x + rand(-3,3), e.y - e.h - 4, Math.round(d) + (isCrit ? '!' : ''),
           isCrit ? '#ffe066' : '#ffffff');
   if (P.lifesteal > 0) P.hp = Math.min(P.maxHp, P.hp + d * P.lifesteal);
@@ -813,6 +832,7 @@ function killEnemy(e){
     rings.push({x: e.x, y: GROUND, r: 6, max: 150, life: 0.6, all: 0.6, color: '#ffffff'});
     addText(e.x, e.y - e.h - 20, ['形态·刃', '形态·壳', '形态·眼'][e.形], '#ffffff');
     播报(['无相 · 转生为「刃」', '无相 · 转生为「壳」', '无相 · 转生为「眼」'][e.形]);
+    呼(0.35, 0.060, 1800, 320);  响(200, 0.28, 'square', 0.042, 640);
     return;
   }
 
@@ -850,6 +870,12 @@ function killEnemy(e){
   e.dead = true;
   P.kills++;
   addParts(e.x, e.y - e.h/2, e.c1, 12, 110);
+  if (timeAlive - 上次死亡声 > 0.09){
+    上次死亡声 = timeAlive;
+    呼(0.10, 0.028, 950, 240);
+    响(rand(190, 240), 0.075, 'triangle', 0.020, 80);
+    if (特效) shake = Math.max(shake, 1.1);
+  }
 
   /* ══ 大幽魂被真正打死 ══
      必须把幽魂计数清零、并重新起 40 秒冷却。
@@ -860,6 +886,7 @@ function killEnemy(e){
     P.幽魂冷却 = 幽魂冷却秒;
     屏色 = '#ffffff';  屏力 = 0.95;  shake = 13;
     播报('大幽魂 · 湮灭');
+    呼(0.45, 0.080, 1400, 180);  响(320, 0.35, 'triangle', 0.055, 70);
     rings.push({x: e.x, y: GROUND, r: 6, max: 230, life: 0.9, all: 0.9, color: '#ffffff'});
     for (let i = 0; i < 64; i++)
       parts.push({x: e.x, y: e.y - e.h/2, vx: rand(-300,300), vy: rand(-300,300),
@@ -909,6 +936,8 @@ function damagePlayer(d){
   P.hp -= d;
   P.iframe = 0.7; P.hitFlash = 0.2;
   shake = Math.min(7, 2 + d * 0.12);
+  呼(0.16, 0.070, 520, 130);
+  响(150, 0.16, 'sawtooth', 0.050, 60);
   addText(P.x, P.y - 30, '-' + Math.round(d), '#ff5566');
   if (P.hp <= 0){ P.hp = 0; die(); }
 }
@@ -1094,6 +1123,10 @@ function 幽灵AI(e, dt, dist, dx){
     if (e.cd2 <= 0 && dist < 280 && !冻结){
       e.cd2 = 4.2 + rand(-1.0, 1.0);
       e.wind = 0.35;                          /* 预警：闪白 + 一道预判线 */
+      if (timeAlive - 上次预警声 > 0.25){
+        上次预警声 = timeAlive;
+        呼(0.26, 0.024, 480, 1700);           /* 幽魂俯冲前的气声 */
+      }
     }
   }
   e.x = clamp(e.x, 8, WORLD - 8);
@@ -1148,6 +1181,7 @@ function 幽魂结算(){
   const o = {noElite: true, lives: 3, hpDps: 4.0};
   if (旧) o.x = 旧.x;
   spawnEnemy('bigghost', o);
+  呼(0.60, 0.070, 900, 150);  响(95, 0.75, 'sawtooth', 0.050, 42);
 }
 
 function update(dt){
@@ -1163,6 +1197,16 @@ function update(dt){
   if (keys.right) mx += 1;
   P.x = clamp(P.x + mx * P.speed * dt, 12, WORLD - 12);
   if (mx) P.facing = mx;
+  /* 小风动：跑动时脚下扬尘 */
+  if (特效 && mx && P.onGround){
+    P.尘 = (P.尘 || 0) - dt;
+    if (P.尘 <= 0){
+      P.尘 = 0.10;
+      parts.push({x: P.x - P.facing * 5, y: GROUND - 1,
+        vx: -P.facing * rand(18, 46), vy: rand(-26, -6),
+        life: rand(0.18, 0.32), max: 0.32, color: '#39436e', s: 1});
+    }
+  }
   if (keys.jump){
     if (P.onGround){                       /* 第一段跳 */
       P.vy = -178; P.onGround = false; P.跳数 = 1;
@@ -1178,6 +1222,13 @@ function update(dt){
     const 刚落地 = !P.onGround;
     P.y = GROUND; P.vy = 0; P.onGround = true; P.跳数 = 0; P.跳锁 = 0;
     if (刚落地 && P.震地 && state === 'play') 震地波();
+    if (刚落地){
+      if (特效) for (let i = 0; i < 6; i++)
+        parts.push({x: P.x + rand(-7, 7), y: GROUND - 1,
+          vx: rand(-55, 55), vy: rand(-46, -10),
+          life: rand(0.18, 0.34), max: 0.34, color: '#3c477a', s: 1});
+      呼(0.075, 0.016, 1500, 480);
+    }
   }
 
   if (P.iframe > 0)  P.iframe  -= dt;
@@ -1284,6 +1335,14 @@ function update(dt){
     if (t){
       P.atkTimer = P.atkInterval;
       P.facing = t.x > P.x ? 1 : -1;
+      if (timeAlive - 上次射击声 > 0.075){
+        上次射击声 = timeAlive;
+        响(rand(540, 660), 0.028, 'square', 0.020, 300);
+      }
+      if (特效) for (let i = 0; i < 2; i++)
+        parts.push({x: P.x + P.facing * 9, y: P.y - 9 + rand(-3, 3),
+          vx: P.facing * rand(70, 130), vy: rand(-16, 16),
+          life: 0.10, max: 0.10, color: '#9fe8ff', s: 1});
       const dmg = P.atk * (P.berserk ? (1 + (1 - P.hp/P.maxHp) * P.berserk) : 1);
       const isCrit = Math.random() < P.crit;
       /* 一发子弹的伤害；暴击整组共用一次判定 */
@@ -1917,8 +1976,10 @@ function update(dt){
         spawnEnemy('wuxiang', {boss: true, lives: 3, noElite: true});
         屏色 = '#c77dff'; 屏力 = 0.85;  shake = 10;
         播报('无相降临 · 刃 / 壳 / 眼 三形态');
+        呼(0.55, 0.075, 260, 90);  响(110, 0.70, 'sawtooth', 0.055, 40);
       } else {
         spawnEnemy('thief', {boss: true, lives: 2 + Math.floor(wave/10), noElite: true});
+        呼(0.45, 0.060, 200, 70);  响(80, 0.55, 'sawtooth', 0.048, 45);
       }
     }
   }
@@ -1947,6 +2008,16 @@ function drawBG(){
     const sy = (i * 53 + 7) % 46;
     const tw = (Math.sin(timeAlive * 2 + i) + 1) * 0.5;
     if (tw > 0.35) px(((sx % (W+40)) + (W+40)) % (W+40) - 20, sy, 1, 1, tw > 0.8 ? '#cfe0ff' : '#6b7ba8');
+  }
+  /* 小风动：缓慢飘过的浮尘（视差 0.5，很淡） */
+  if (特效){
+    const 风 = timeAlive * 14;
+    for (let i = 0; i < 16; i++){
+      const 基x = i * 71 + (i % 3) * 23;
+      const 飘x = ((基x + 风 * (0.6 + (i % 4) * 0.25) - cam * 0.5) % (W + 60) + (W + 60)) % (W + 60) - 30;
+      const 飘y = 34 + ((i * 37) % (GROUND - 66)) + Math.sin(timeAlive * 0.7 + i) * 5;
+      px(飘x, 飘y, 1, 1, i % 3 ? 'rgba(150,180,255,.16)' : 'rgba(190,215,255,.26)');
+    }
   }
   /* 远山 */
   const off1 = cam * 0.18;
@@ -2321,6 +2392,11 @@ function 设宽(el, r){
 }
 /* 大字播报（波次 / 污染 / 首领），用 CSS 动画 */
 function 播报(t){
+  if (timeAlive - 上次播报声 > 0.5){
+    上次播报声 = timeAlive;
+    响(660, 0.10, 'triangle', 0.038, 1000);
+    呼(0.16, 0.018, 800, 1600);
+  }
   const a = HUD.ann;
   if (!a || a._t === t && a.classList.contains('show')) return;
   a._t = t;
@@ -2394,6 +2470,12 @@ function render(){
   }
   for (const e of enemies) if (e.x > cam - 40 && e.x < cam + W + 40) drawEnemy(e);
   for (const p of projs){
+    if (特效){
+      const 速0 = Math.hypot(p.vx || 0, p.vy || 0) || 1;
+      ctx.globalAlpha = 0.30;
+      px(p.x - p.vx / 速0 * 7 - 1, p.y - p.vy / 速0 * 7 - 1, 3, 3, p.crit ? '#ffe066' : '#9fe8ff');
+      ctx.globalAlpha = 1;
+    }
     px(p.x - 2, p.y - 2, 4, 4, p.crit ? '#ffe066' : '#9fe8ff');
   }
   for (const p of eprojs){
@@ -2435,13 +2517,117 @@ function render(){
     ctx.fillRect(-10, -10, W + 20, H + 20);
     ctx.globalAlpha = 1;
   }
+  /* 残血：四边泛红、随心跳闪动 */
+  if (state === 'play' && P.hp > 0 && P.hp / P.maxHp < 0.35){
+    const 危 = 1 - (P.hp / P.maxHp) / 0.35;
+    ctx.globalAlpha = Math.min(0.55, 0.06 + 危 * (0.18 + 0.14 * Math.sin(timeAlive * 7)));
+    ctx.fillStyle = '#ff2244';
+    ctx.fillRect(0, 0, W, 5); ctx.fillRect(0, H - 5, W, 5);
+    ctx.fillRect(0, 0, 5, H); ctx.fillRect(W - 5, 0, 5, H);
+    ctx.globalAlpha = 1;
+  }
 }
+
+/* ══════════════════════ 音效 ══════════════════════
+   全部用 Web Audio 现场合成 —— 不带任何音频文件，单文件照样能响。
+   整体音量压得很低：打击感靠「又轻又密」，不是靠响。*/
+let 音效开 = true, 特效 = 1, AC = null, 主增益 = null, 噪声缓冲 = null;
+let 本帧声 = 0, 定帧 = 0, 上次定帧 = -9;
+let 上次射击声 = -9, 上次命中声 = -9, 上次死亡声 = -9, 上次预警声 = -9, 上次播报声 = -9;
+
+function 音频准备(){
+  try {
+    if (AC){
+      if (AC.state === 'suspended' && AC.resume) AC.resume();
+      return;
+    }
+    const C = window.AudioContext || window.webkitAudioContext;
+    if (!C){ 音效开 = false; return; }
+    AC = new C();
+    主增益 = AC.createGain();  主增益.gain.value = 0.42;  主增益.connect(AC.destination);
+    const n = Math.floor(AC.sampleRate * 0.4);
+    噪声缓冲 = AC.createBuffer(1, n, AC.sampleRate);
+    const d = 噪声缓冲.getChannelData(0);
+    let v = 0;
+    for (let i = 0; i < n; i++){ v = v * 0.45 + (Math.random() * 2 - 1) * 0.55; d[i] = v; }
+  } catch (e){ 音效开 = false; }
+}
+/* 音高音：带滑音 */
+function 响(频, 时长, 波形, 音量, 滑到){
+  if (!音效开 || !AC || 本帧声 > 4) return;
+  本帧声++;
+  try {
+    const t = AC.currentTime;
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.type = 波形 || 'square';
+    o.frequency.setValueAtTime(频, t);
+    if (滑到) o.frequency.exponentialRampToValueAtTime(Math.max(24, 滑到), t + 时长);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(音量, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 时长);
+    o.connect(g); g.connect(主增益);
+    o.start(t); o.stop(t + 时长 + 0.03);
+  } catch (e){}
+}
+/* 气声：噪声 + 带通。打击 / 风 / 爆炸都用它 */
+function 呼(时长, 音量, 起频, 终频){
+  if (!音效开 || !AC || !噪声缓冲 || 本帧声 > 4) return;
+  本帧声++;
+  try {
+    const t = AC.currentTime;
+    const s = AC.createBufferSource(); s.buffer = 噪声缓冲;
+    const f = AC.createBiquadFilter(); f.type = 'bandpass';
+    f.frequency.setValueAtTime(起频, t);
+    if (终频) f.frequency.exponentialRampToValueAtTime(Math.max(40, 终频), t + 时长);
+    f.Q.value = 1.1;
+    const g = AC.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(音量, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 时长);
+    s.connect(f); f.connect(g); g.connect(主增益);
+    s.start(t); s.stop(t + 时长 + 0.03);
+  } catch (e){}
+}
+
+/* ── 开关 ── */
+function 存设定(){
+  try { localStorage.setItem('pixset', JSON.stringify({ s: 音效开 ? 1 : 0, f: 特效 })); } catch (e){}
+}
+function 读设定(){
+  try {
+    const v = JSON.parse(localStorage.getItem('pixset') || 'null');
+    if (v){ 音效开 = !!v.s; 特效 = (v.f === undefined) ? 1 : v.f; }
+  } catch (e){}
+}
+function 刷按钮(){
+  $('bSfx').textContent = '音效：' + (音效开 ? '开' : '关');
+  $('bFx').textContent  = '打击感：' + (特效 ? '强' : '弱');
+}
+function 切音效(){
+  音效开 = !音效开;
+  if (音效开) 音频准备();
+  刷按钮(); 存设定();
+  响(音效开 ? 880 : 320, 0.10, 'triangle', 0.05, 音效开 ? 1320 : 150);
+}
+function 切特效(){
+  特效 = 特效 ? 0 : 1;
+  刷按钮(); 存设定();
+  响(特效 ? 700 : 260, 0.10, 'triangle', 0.05, 特效 ? 1050 : 140);
+}
+$('bSfx').onclick = 切音效;
+$('bFx').onclick  = 切特效;
+/* 第一次点/按键时把 AudioContext 建起来（浏览器要求必须有用户手势） */
+addEventListener('pointerdown', 音频准备);
+addEventListener('keydown', 音频准备);
 
 /* ============================ 主循环 ============================ */
 let last = performance.now();
 function loop(t){
   const dt = Math.min(0.033, (t - last) / 1000);
   last = t;
+  本帧声 = 0;
+  /* 打击停顿：暴击瞬间冻 1~2 帧，让「打中了」有分量。很短，不会顿卡 */
+  if (定帧 > 0){ 定帧 -= dt; render(); requestAnimationFrame(loop); return; }
   if (state === 'play') update(dt);
   else if (state === 'dead' || state === 'perk'){ if (shake > 0) shake = Math.max(0, shake - dt*14); }
   render();
@@ -2460,6 +2646,8 @@ addEventListener('keydown', e => {
   if (e.code === 'Space' || e.code === 'KeyW' || e.code === 'ArrowUp'){
     keys.jump = true; e.preventDefault();
   }
+  if (e.code === 'KeyM'){ 切音效(); return; }
+  if (e.code === 'KeyN'){ 切特效(); return; }
   if (e.code === 'KeyR' && state === 'dead') startGame();
   if ((e.code === 'Space' || e.code === 'Enter') && state === 'start') startGame();
 });
@@ -2503,7 +2691,7 @@ $('bPause').onclick  = 暂停;
 $('bResume').onclick = 继续游戏;
 $('bQuit').onclick   = 退出游戏;
 
-$('bStart').onclick = function(){ skipRot = true; goFull(); startGame(); 播报('第 1 波'); };
+$('bStart').onclick = function(){ skipRot = true; goFull(); 音频准备(); startGame(); 播报('第 1 波'); };
 $('bAgain').onclick = function(){ goFull(); startGame(); };
 $('bRot').onclick   = function(){ goFull(); };
 $('bSkip').onclick  = function(){ skipRot = true; checkOrient(); };
@@ -2552,6 +2740,8 @@ function checkOrient(){
 addEventListener('resize', function(){ fit(); checkOrient(); });
 addEventListener('orientationchange', function(){ setTimeout(function(){ fit(); checkOrient(); }, 150); });
 document.addEventListener('fullscreenchange', function(){ setTimeout(function(){ fit(); checkOrient(); }, 250); });
+读设定();
+刷按钮();
 fit();
 checkOrient();
 reset();
