@@ -171,7 +171,7 @@
         <span id="hTime"></span>
         <span id="hSoul" style="color:#ffd94a;font-size:.8em"></span>
         <div id="hStats">
-          <div class="st">攻 <b id="stAtk"></b><i id="stProj"></i><i id="stAspd"></i></div>
+          <div class="st">攻 <b id="stAtk"></b><i id="stAtkBase"></i><i id="stProj"></i><i id="stAspd"></i></div>
           <div class="st">暴击 <b id="stCrit"></b><i>暴伤</i><b id="stCdmg"></b></div>
           <div class="st">DPS <b id="stDps"></b><i>射程</i><b id="stRange"></b></div>
           <div class="st">复活 <b id="stRev"></b><i id="stExtra"></i></div>
@@ -301,7 +301,7 @@ let keys = {};
 /* ============================ 词条 ============================ */
 /* 只有 锋锐 / 锐眼 / 致命 是纯数值且无上限，其余全部最多 6 层 */
 const PERKS = [
-  {id:'atk',   n:'锋锐', d:'基础攻击力 +4',        f:()=>P.基攻 += 4},
+  {id:'atk',   n:'锋锐', d:'基础攻击力 +4（会被「攻击力百分比」放大）', f:()=>P.基攻 += 4},
   {id:'aspd',  n:'疾风', d:'攻击速度 +8%',    max:6, f:()=>P.atkInterval *= 0.92},
   {id:'crit',  n:'锐眼', d:'暴击率 +7%',           f:()=>P.crit = Math.min(1, P.crit + 0.07)},
   {id:'cdmg',  n:'致命', d:'暴击伤害 +35%',         f:()=>P.critDmg += 0.35},
@@ -472,6 +472,15 @@ function perkOptions(){
 function 按id找词条(id){
   for (const a of [UNLOCK, PERKS, UNIQUES]) for (const x of a) if (x.id === id) return x;
   return null;
+}
+/* 锋锐的 +4 是「基础攻击」，会被攻击力百分比放大。
+   卡面上直接把当前等效值写出来，免得玩家以为只加了 4。*/
+function 词条效果后缀(o){
+  if (!o || o.id !== 'atk') return '';
+  const 倍 = 1 + (P.atkPct || 0);
+  if (倍 <= 1.001) return '';
+  const 增 = 4 * 倍;
+  return '　→ 当前等效攻击 +' + (Math.round(增 * 10) / 10);
 }
 /* 记录每一次选词条的顺序，用来给主词条排名做「并列取先到者」 */
 function 记一笔(id){ P.选序.push(id); }
@@ -786,7 +795,7 @@ function openPerk(){
     b.className = 'card' + (o.u ? ' uni' : (o.k ? ' unlock' : ''));
     b.innerHTML = '<span class="n">' + o.n + (o.u ? '<i class="tag">唯一</i>' : '')
                 + '</span>'
-                + '<span class="d">' + o.d + '</span>'
+                + '<span class="d">' + o.d + 词条效果后缀(o) + '</span>'
                 + (st ? '<span class="s">已叠 ' + st + ' 层</span>' : '');
     b.onclick = () => takePerk(o);
     box.appendChild(b);
@@ -840,7 +849,7 @@ function 刷商店(){
     b.className = 'card ' + (o.k ? 'adv' : 'shop') + (满 || 穷 ? ' cant' : '');
     b.innerHTML = '<span class="n">' + o.n
                 + (o.k ? '<i class="tag2">进阶 · 主词条</i>' : '') + '</span>'
-                + '<span class="d">' + o.d + '</span>'
+                + '<span class="d">' + o.d + 词条效果后缀(o) + '</span>'
                 + '<span class="s">已叠 ' + st + ' 层' + (o.max ? ' / ' + o.max : '') + '</span>'
                 + '<span class="price">'
                 + (满 ? '已 满' : (价 + ' 金' + (穷 ? '　（金币不够）' : '')))
@@ -1363,9 +1372,21 @@ function 幽魂结算(){
   呼(0.60, 0.070, 900, 150);  响(95, 0.75, 'sawtooth', 0.050, 42);
 }
 
+/* ══ 最终攻击力 ══
+   最终攻击 = 基础攻击 × (1 + 攻击力百分比)
+   所以「锋锐」的 +4 会被攻击力百分比放大：百分比堆到 300% 时，
+   每层锋锐实际相当于 +4 × 4 = +16。
+   ⚠ 以前这句只写在 update() 里 —— 而词条选择界面开着时 update() 是不跑的，
+   于是右上角面板一直显示旧值：点锋锐时那个攻击力纹丝不动，
+   要等所有词条选完回到游戏才「跳一下」。现在抽成函数，面板每帧都刷新。*/
+function 刷新攻击(){
+  P.atk = (P.基攻 || 7) * (1 + (P.atkPct || 0));
+  return P.atk;
+}
+
 function update(dt){
   timeAlive += dt;
-  P.atk = (P.基攻 || 7) * (1 + (P.atkPct || 0));
+  刷新攻击();
   if (shake > 0) shake = Math.max(0, shake - dt * 14);
   if (屏力 > 0) 屏力 = Math.max(0, 屏力 - dt * 1.5);
   if (announce > 0) announce -= dt;
@@ -2584,7 +2605,7 @@ const HUD = {
   gold: $('goldFill'), goldT: $('goldTxt'),
   lv: $('hLv'), perk: $('hPerk'), pol: $('hPol'), polx: $('hPolX'),
   wave: $('hWave'), time: $('hTime'), ann: $('ann'), mainPk: $('hMainPk'), soul: $('hSoul'),
-  stAtk: $('stAtk'), stProj: $('stProj'), stAspd: $('stAspd'), stCrit: $('stCrit'),
+  stAtk: $('stAtk'), stAtkBase: $('stAtkBase'), stProj: $('stProj'), stAspd: $('stAspd'), stCrit: $('stCrit'),
   stCdmg: $('stCdmg'), stDps: $('stDps'), stRange: $('stRange'),
   stRev: $('stRev'), stExtra: $('stExtra'),
 };
@@ -2609,6 +2630,7 @@ function 播报(t){
   a.classList.add('show');
 }
 function syncHUD(){
+  刷新攻击();                      /* 面板上永远是最新的最终攻击力 */
   设宽(HUD.hp, P.hp / P.maxHp);
   设宽(HUD.xp, P.xp / P.xpNeed);
   设宽(HUD.gold, ((P.金币 || 0) % 金币每格) / 金币每格);
@@ -2639,6 +2661,10 @@ function syncHUD(){
      攻击 = 基础攻击 ×(1+攻击力百分比)，就是真正打出去的那个数
      DPS  = 攻击 × 弹数 × 暴击期望 ÷ 攻速（和首领血量用的是同一个公式）*/
   设文(HUD.stAtk,   Math.round(P.atk));
+  /* 有攻击力百分比时，把「基础 × 倍率」摊开显示，一眼能看出锋锐被放大了多少 */
+  设文(HUD.stAtkBase, P.atkPct > 0.001
+        ? (Math.round(P.基攻) + '×' + (1 + P.atkPct).toFixed(2))
+        : '');
   设文(HUD.stProj,  '×' + P.projCount);
   设文(HUD.stAspd,  (1 / P.atkInterval).toFixed(1) + '/s');
   设文(HUD.stCrit,  Math.round(P.crit * 100) + '%');
