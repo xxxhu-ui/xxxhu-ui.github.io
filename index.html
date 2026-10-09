@@ -294,22 +294,10 @@ const UNLOCK = [
   {id:'ice',    n:'寒冰', k:1, max:6,
    d:'每 10 秒降下一颗寒冰，冻住最近的怪 10 秒；每层 CD −1 秒（最少 5 秒）',
    f:()=>P.ice = (P.ice || 0) + 1},
-  /* 你没提到的主词条，各配一个便宜的数值进阶，免得选它们等于白选 */
-  {id:'dr2',    n:'不动如山', k:1, max:6, d:'受到的伤害再 −3%',
-   f:()=>P.dr = Math.min(0.80, P.dr + 0.03)},
-  {id:'thorn2', n:'铁刺', k:1, max:6, d:'荆棘反伤再 +30% 攻击力',
-   f:()=>P.thorns += 3},
-  {id:'kb2',    n:'震荡', k:1, max:6, d:'击退再 +25%',
-   f:()=>P.knockback *= 1.25},
-  {id:'shield2',n:'圣盾', k:1, max:4, d:'护盾上限 +1（可突破 6 层）',
-   f:()=>P.shieldMax += 1},
-  {id:'berserk2',n:'死志', k:1, max:6, d:'残血时吸血 +5%',
-   f:()=>P.lifesteal += 0.05},
 ];
 const 解锁表 = {
   atk:['atkpct'], aspd:['aspd2'], crit:['critsplit'], cdmg:['snipe'],
   hp:['hpup'], ls:['execute'], proj:['splitp'], poison:['bianque'], frost:['ice'],
-  dr:['dr2'], thorn:['thorn2'], kb:['kb2'], shield:['shield2'], berserk:['berserk2'],
   move:[], range:[], xp:[], regen:[],
 };
 /* 主词条本身的效果（不是可选词条的那种）*/
@@ -319,6 +307,59 @@ function 应用主词条(id){
   if (id === 'xp'){  P.xpGain += 3; P.已删词条.push('xp'); }          /* 贪婪 → 经验 +300% 并删除 */
   if (id === 'hp'){  P.已删词条.push('hp'); }                        /* 铁壁 → 删除（效果保留）*/
 }
+
+/* ══════════ 19 级：主词条 ＋ 第二词条 ＝ 合成武器 ══════════
+   对称设计：9级选A/19级选B 与 9级选B/19级选A 得到同一把
+   12 个主词条各连 3 个伙伴，一共 18 条边 = 18 把武器            */
+const 武器伙伴 = {
+  atk:['aspd','xp','frost'],   aspd:['atk','proj','poison'],
+  proj:['aspd','crit','ls'],   crit:['proj','cdmg','hp'],
+  cdmg:['crit','range','move'],range:['cdmg','frost','xp'],
+  frost:['range','poison','atk'], poison:['frost','ls','aspd'],
+  ls:['poison','hp','proj'],   hp:['ls','move','crit'],
+  move:['hp','xp','cdmg'],     xp:['move','atk','range'],
+};
+function 武器键(a, b){ return [a, b].sort().join('|'); }
+const 武器表 = {
+ 'aspd|atk':   {n:'连锋枪', cd:0.5,  数:1, 速:1.15, 伤:P=>P.atk*0.8,
+   d:'连射极快。连续命中同一目标伤害 +8%（最多 +120%），换目标清零',
+   命中:(e)=>{ if (P.连击目标 === e) P.连击层 = Math.min(15, (P.连击层||0)+1);
+               else { P.连击目标 = e; P.连击层 = 0; } }},
+ 'aspd|proj':  {n:'蜂群枪', cd:1.1,  数:6, 速:0.85, 散:0.5, 伤:P=>P.atk*0.5,
+   d:'扇形喷出 6 颗小弹，单发伤害只有一半'},
+ 'crit|proj':  {n:'裂空枪', cd:1.4,  数:1, 速:1,    伤:P=>P.atk*1.1, 裂:3,
+   d:'子弹命中后裂成 3 颗（只裂一次，不会无限增殖）'},
+ 'cdmg|crit':  {n:'斩首枪', cd:1.5,  数:1, 速:1.1,  伤:P=>P.atk*0.6, 必暴:1,
+   d:'必定暴击、暴击伤害翻倍，但基础伤害只有 60%'},
+ 'cdmg|range': {n:'狙击枪', cd:2.6,  数:1, 速:2.4,  伤:P=>P.atk*1.6, 穿:99, 距伤:0.15,
+   d:'2.6 秒一发，无限穿透；离得越远打得越疼（每 100 像素 +15%）'},
+ 'frost|range':{n:'霜矢枪', cd:1.7,  数:1, 速:0.9,  伤:P=>P.atk*1.0, 抛物:1, 冰圈:46,
+   d:'抛物弹道，落点炸出冰圈，踩进去的怪减速 3 秒'},
+ 'frost|poison':{n:'霜蚀枪', cd:1.5, 数:1, 速:1.1,  伤:P=>P.atk*1.0, 引爆:1,
+   d:'打中被减速或冻住的怪时，直接引爆 8 秒的毒伤'},
+ 'ls|poison':  {n:'蚀血枪', cd:1.6,  数:1, 速:1,    伤:P=>P.atk*0.9, 毒吸:1,
+   d:'命中上毒，毒伤跳动的一半变成你的回血'},
+ 'hp|ls':      {n:'血偿枪', cd:1.3,  数:1, 速:1,    代价:0.05, 伤:P=>Math.max(1,(P.maxHp-P.hp)*0.8),
+   d:'开火扣 5% 最大生命；子弹伤害 = 已损失生命的 80%'},
+ 'hp|move':    {n:'冲撞枪', cd:1.2,  数:2, 速:1.2,  伤:P=>P.atk*0.9, 跟向:1,
+   d:'朝你正在移动的方向发射，跑动时才有火力'},
+ 'move|xp':    {n:'拾荒枪', cd:1.5,  数:1, 速:1.1,  伤:P=>P.atk*1.0, 掉球:1,
+   d:'命中过的怪，死后必定多掉一颗经验球'},
+ 'atk|xp':     {n:'铸币枪', cd:1.6,  数:1, 速:1,    伤:P=>P.atk*(1 + (P.总经验||0)/800),
+   d:'伤害 = 攻击 × (1 + 本局总经验 ÷ 800)，越打越强'},
+ 'atk|frost':  {n:'碎冰枪', cd:1.5,  数:1, 速:1.1,  伤:P=>P.atk*0.9, 碎冰:3,
+   d:'打中被减速或冻住的敌人时，伤害三倍'},
+ 'aspd|poison':{n:'瘴气枪', cd:0.35, 数:1, 速:0.9,  伤:P=>P.atk*0.35, 毒雾:1,
+   d:'射速极快，子弹飞行途中一路撒毒雾'},
+ 'ls|proj':    {n:'吸髓枪', cd:2.0,  数:3, 绕:1,    伤:P=>P.atk*0.9, 吸血:0.5,
+   d:'子弹不飞出去，而是绕着你转，碰到就吸一大口血'},
+ 'crit|hp':    {n:'坚壁枪', cd:1.4,  数:1, 速:1.6,  穿:99, 盾弹:1, 伤:P=>P.atk*1.4,
+   d:'消耗一层护盾打出穿甲冲击波；没有护盾时打不出来'},
+ 'cdmg|move':  {n:'残影枪', cd:1.3,  数:2, 速:1.2,  残影:1, 伤:P=>P.atk*0.9,
+   d:'子弹从你 1 秒前所在的位置打出去'},
+ 'range|xp':   {n:'淘金枪', cd:1.5,  数:1, 速:1.2,  穿:4, 穿伤:0.30, 掉球:1, 伤:P=>P.atk*0.8,
+   d:'子弹每穿透一只怪伤害 +30%；命中的怪死后多掉一颗经验球'},
+};
 
 /* ══════════ 30 级「唯一词条」：每种只能拿一次，出现时是金卡 ══════════ */
 const UNIQUES = [
@@ -363,8 +404,9 @@ function 记一笔(id){ P.选序.push(id); }
 function 主词条候选(){
   const 统计 = {};
   P.选序.forEach((id, i) => { (统计[id] = 统计[id] || []).push(i); });
+  const 允许 = ['atk','aspd','crit','cdmg','hp','ls','move','range','proj','poison','xp','frost'];
   return Object.keys(统计)
-    .filter(id => id !== 'regen')                     /* 再生不做主词条 */
+    .filter(id => 允许.includes(id))                  /* 只有这 12 个能做主词条 */
     .map(id => ({ id, n: 统计[id].length, 到: 统计[id][统计[id].length - 1] }))
     .sort((a, b) => (b.n - a.n) || (a.到 - b.到))
     .slice(0, 3);
@@ -419,6 +461,8 @@ function reset(){
     选序: [], 复活次数: 0, 复活CD: 0, 二段跳: 0, 跳数: 0, 贯穿: 0,
     hpup: 0, snipeCd: 0, execCd: 0, bianCd: 0, iceCd: 0, critSplit: 0, splitp: 0,
     snipe: 0, execute: 0, bianque: 0, ice: 0, 跳锁: 0,
+    武器: null, 武器Cd: 0, 主词条2: null, 连击目标: null, 连击层: 0,
+    总经验: 0, 轨迹: [], 移动向: 0,
   });
   enemies = []; projs = []; eprojs = []; orbs = []; parts = []; texts = [];
   pendingSpawns = [];
@@ -472,6 +516,7 @@ function 震地波(){
 /* ============================ 经验 / 升级 ============================ */
 function addXp(v){
   P.xp += v * P.xpGain;
+  P.总经验 = (P.总经验 || 0) + v * P.xpGain;
   while (P.xp >= P.xpNeed){
     P.xp -= P.xpNeed;
     P.level++;
@@ -494,11 +539,19 @@ function addXp(v){
     shake = 5;
     addParts(P.x, P.y - 9, '#c77dff', 30, 180);
   }
-  if (pendingPerks > 0 && state === 'play'){
-    if (!P.主词条 && P.level >= 9) 开主词条选择();
-    else if (!P.已选唯一 && P.level >= 30) 开唯一选择();
-    else openPerk();
-  }
+  if (pendingPerks > 0 && state === 'play') 推进选择();
+}
+
+/* ============================ 所有「选择」的统一入口 ============================
+   升级、选完词条、选完主词条、选完武器之后，全部走这里。
+   否则一次性升多级时，后面的特殊界面会被普通词条面板顶掉。   */
+function 推进选择(){
+  if (state === 'dead' || state === 'start' || state === 'pause') return;
+  if (!P.主词条 && P.level >= 9){  开主词条选择(); return; }
+  if (!P.武器   && P.level >= 19){ 开武器选择();   return; }
+  if (!P.已选唯一 && P.level >= 30){ 开唯一选择(); return; }
+  if (pendingPerks > 0) openPerk();
+  else state = 'play';
 }
 
 /* ============================ 主词条 · 选择界面 ============================ */
@@ -536,7 +589,78 @@ function 定主词条(id){
   const o = 按id找词条(id);
   $('mainperk').classList.add('hide');
   播报('主词条：' + (o ? o.n : id));
-  if (pendingPerks > 0) openPerk(); else state = 'play';
+  推进选择();
+}
+
+/* ============================ 19 级 · 合成武器 三选一 ============================ */
+function 开武器选择(){
+  state = 'main'; keys = {};
+  const 主 = 按id找词条(P.主词条);
+  $('mpTitle').textContent = '合 成 武 器 · 三 选 一';
+  $('mpSub').innerHTML = '主词条「' + (主 ? 主.n : '') + '」＋ 下面三个里的一个 ＝ 一把专属武器<br>'
+    + '选中的词条会同时成为你的 <b>第二主词条</b>（也会解锁它自己的进阶词条）';
+  const box = $('mainCards'); box.innerHTML = '';
+  (武器伙伴[P.主词条] || []).forEach(id => {
+    const o = 按id找词条(id); if (!o) return;
+    const w = 武器表[武器键(P.主词条, id)];
+    const b = document.createElement('button');
+    b.className = 'card unlock main';
+    b.innerHTML = '<span class="n">' + (w ? w.n : '?') + '<i class="tag2">武器</i></span>'
+      + '<span class="d">' + o.n + '　' + (w ? w.d : '') + '</span>'
+      + '<span class="s">同时解锁：'
+      + ((解锁表[id] || []).map(x => (按id找词条(x) || {}).n).join('、') || '（无）') + '</span>';
+    b.onclick = () => 定武器(id);
+    box.appendChild(b);
+  });
+  $('mainperk').classList.remove('hide');
+}
+function 定武器(id){
+  P.主词条2 = id;
+  P.武器    = 武器键(P.主词条, id);
+  P.主卡池  = (解锁表[P.主词条] || []).concat(解锁表[id] || []);
+  应用主词条(id);
+  P.武器Cd  = 0;
+  const w = 武器表[P.武器];
+  $('mainperk').classList.add('hide');
+  播报('合成武器：' + (w ? w.n : ''));
+  推进选择();
+}
+
+/* 武器开火 */
+function 武器开火(w, 目){
+  if (w.盾弹){
+    if (P.shield <= 0){ P.武器Cd = 0.35; return; }
+    P.shield--;
+  }
+  if (w.代价){ P.hp = Math.max(1, P.hp - P.maxHp * w.代价); }
+  let 基 = w.伤(P);
+  if (P.连击层) 基 *= (1 + 0.08 * P.连击层);
+  const 暴 = w.必暴 ? true : Math.random() < P.crit;
+  const 伤 = 基 * (暴 ? (w.必暴 ? P.critDmg * 2 : P.critDmg) : 1);
+  let ang = (目 && !w.跟向) ? Math.atan2((目.y - 目.h/2) - (P.y - 9), 目.x - P.x)
+                            : (P.facing > 0 ? 0 : Math.PI);
+  if (w.跟向 && keys.left) ang = Math.PI;
+  if (w.跟向 && keys.right) ang = 0;
+  let 原点 = {x: P.x, y: P.y - 9};
+  if (w.残影 && P.轨迹 && P.轨迹.length) 原点 = {x: P.轨迹[0].x, y: P.轨迹[0].y};
+  const n = w.数 || 1;
+  for (let i = 0; i < n; i++){
+    const a = ang + ((i - (n-1)/2) * (w.散 || 0.16));
+    if (w.绕){
+      projs.push({x: P.x, y: P.y - 9, vx: 0, vy: 0, orbit: 1,
+        oa: i * (Math.PI * 2 / n), or: 34,
+        dmg: 伤, crit: 暴, life: 2.2, dead: false, w: P.武器, 吸血: w.吸血 || 0});
+    } else {
+      projs.push({x: 原点.x, y: 原点.y,
+        vx: Math.cos(a) * P.projSpeed * (w.速 || 1),
+        vy: Math.sin(a) * P.projSpeed * (w.速 || 1),
+        dmg: 伤, crit: 暴, life: 1.7, dead: false, w: P.武器, sx: 原点.x,
+        pierce: w.穿 || 0, 裂: w.裂 || 0, 碎冰: w.碎冰 || 0, 引爆: w.引爆 || 0,
+        毒吸: w.毒吸 || 0, 毒雾: w.毒雾 || 0, 掉球: w.掉球 || 0,
+        穿伤: w.穿伤 || 0, 距伤: w.距伤 || 0, 抛物: w.抛物 || 0, 冰圈: w.冰圈 || 0});
+    }
+  }
+  addParts(P.x, P.y - 32, '#7fffd4', 6, 95);
 }
 
 /* ============================ 30 级 · 唯一词条 六选一 ============================ */
@@ -561,7 +685,7 @@ function 定唯一(id){
   if (o){ o.f(); P.inv[id] = 1; }
   $('mainperk').classList.add('hide');
   播报('唯一词条：' + (o ? o.n : id));
-  if (pendingPerks > 0) openPerk(); else state = 'play';
+  推进选择();
 }
 
 /* ============================ 词条面板 ============================ */
@@ -587,8 +711,7 @@ function takePerk(o){
   记一笔(o.id);
   pendingPerks--;
   $('perk').classList.add('hide');
-  if (pendingPerks > 0) openPerk();
-  else state = 'play';
+  推进选择();
 }
 
 /* ============================ 伤害 ============================ */
@@ -648,6 +771,8 @@ function killEnemy(e){
   /* 掉的球：把偷走的经验一起还给你 */
   orbs.push({x: e.x, y: e.y - e.h/2, vy: rand(-70,-25), vx: rand(-30,30),
              val: e.xp + (e.stolen || 0), life: 22, dead: false});
+  if (e.掉球) orbs.push({x: e.x + rand(-10,10), y: e.y - e.h/2, vy: rand(-80,-30),
+             vx: rand(-40,40), val: Math.max(2, Math.round(e.xp * 0.6)), life: 22, dead: false});
 }
 function damagePlayer(d){
   if (P.iframe > 0 || state !== 'play') return;
@@ -700,8 +825,10 @@ function spawnEnemy(type, opts){
   /* 污染值：每 10 级 +1。怪的基础血量/攻击 ×1.25^污染（指数叠加）*/
   const pol = Math.pow(1.25, P.污染 || 0);
   /* 每波的自然成长放得很缓 —— 难度主要交给污染值 */
-  const hpS  = Math.pow(1.10, wave - 1) * pol;
-  const atkS = Math.pow(1.055, wave - 1) * pol;
+  /* 35 波之后额外抬升：每波 ×1.05（有人反馈后期太无聊）*/
+  const 后期 = wave >= 35 ? Math.pow(1.05, wave - 35) : 1;
+  const hpS  = Math.pow(1.10, wave - 1) * pol * 后期;
+  const atkS = Math.pow(1.055, wave - 1) * pol * 后期;
   const spdS = Math.min(1.7, 1 + wave * 0.022);
 
   const elite   = !opts.noElite && !opts.boss && (P.污染 || 0) >= 2 && Math.random() < 0.28;
@@ -798,6 +925,21 @@ function update(dt){
   if (P.无升级秒 >= 60){
     addXp((P.xpNeed / 60) * dt / P.xpGain);
   }
+
+  /* ---- 合成武器：悬在头顶，独立开火 ---- */
+  if (P.武器){
+    const w = 武器表[P.武器];
+    if (w){
+      P.武器Cd -= dt;
+      if (P.武器Cd <= 0){
+        const 目 = nearestEnemy();
+        if (目 || w.绕){ P.武器Cd = w.cd; 武器开火(w, 目); }
+      }
+    }
+  }
+  /* 残影枪要用：记录最近 1 秒的位置 */
+  P.轨迹.push({x: P.x, y: P.y - 9, t: timeAlive});
+  while (P.轨迹.length && timeAlive - P.轨迹[0].t > 1.0) P.轨迹.shift();
 
   /* ---- 主词条解锁的进阶效果 ---- */
   if (P.复活CD > 0) P.复活CD -= dt;
@@ -931,13 +1073,54 @@ function update(dt){
 
   /* ---- 投射物 ---- */
   for (const p of projs){
-    p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
-    if (p.life <= 0 || p.x < cam-40 || p.x > cam+W+40 || p.y < -20 || p.y > H+20){ p.dead = true; continue; }
+    if (p.orbit){                                   /* 吸髓枪：绕着自己转 */
+      p.oa += dt * 3.4;
+      p.x = P.x + Math.cos(p.oa) * p.or;
+      p.y = (P.y - 9) + Math.sin(p.oa) * p.or;
+    } else {
+      if (p.抛物) p.vy += 400 * dt;
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      if (p.毒雾) for (const e2 of enemies){
+        if (!e2.dead && Math.abs(e2.x - p.x) < 15 && Math.abs((e2.y - e2.h/2) - p.y) < 15){
+          e2.poisonT = 3.0; e2.poisonTick = 0.2;
+        }
+      }
+      if (p.抛物 && p.y >= GROUND - 2){             /* 霜矢枪：落点冰圈 */
+        for (const e2 of enemies){
+          if (!e2.dead && Math.abs(e2.x - p.x) < (p.冰圈||40)){
+            e2.slowT = 3.0; e2.slowVal = 0.55;
+          }
+        }
+        rings.push({x: p.x, y: GROUND, r: 5, max: p.冰圈 || 40, life: 0.4, all: 0.4, color: '#7fd4ff'});
+        p.dead = true; continue;
+      }
+    }
+    p.life -= dt;
+    if (p.life <= 0 || p.y < -20 || p.y > H+20 || (!p.orbit && (p.x < cam-40 || p.x > cam+W+40))){ p.dead = true; continue; }
     for (const e of enemies){
       if (e.dead) continue;
       if (Math.abs(e.x - p.x) < e.w/2 + 3 && p.y > e.y - e.h - 3 && p.y < e.y + 2){
         if (p.exec && !e.boss) e.hp = 0;        /* 处决弹：直接清血 */
-        hurtEnemy(e, p.dmg, p.crit);
+        let 本次 = p.dmg;
+        if (p.距伤) 本次 *= (1 + p.距伤 * Math.abs(p.x - (p.sx === undefined ? p.x : p.sx)) / 100);
+        if (p.碎冰 && (e.frozen > 0 || e.slowT > 0)) 本次 *= p.碎冰;
+        if (p.穿伤) 本次 *= Math.pow(1 + p.穿伤, p.穿层 || 0);
+        if (p.引爆 && (e.frozen > 0 || e.slowT > 0)){
+          const 毒 = P.atk * (0.5 + 0.2 * (Math.max(1, P.poison) - 1)) * 5 * 8;
+          e.hp -= 毒; P.dmgDealt += 毒;
+          addText(e.x, e.y - e.h - 18, '引爆 ' + Math.round(毒), '#8cd94a');
+          addParts(e.x, e.y - e.h/2, '#8cd94a', 20, 150);
+        }
+        hurtEnemy(e, 本次, p.crit);
+        if (p.裂){                                   /* 裂空枪：命中后裂成 3 颗 */
+          for (let k = -1; k <= 1; k++){
+            const a2 = Math.atan2(p.vy, p.vx) + k * 0.45;
+            projs.push({x: p.x, y: p.y, vx: Math.cos(a2)*P.projSpeed, vy: Math.sin(a2)*P.projSpeed,
+              dmg: p.dmg * 0.7, crit: p.crit, life: 0.7, dead: false});
+          }
+        }
+        if (p.掉球) e.掉球 = 1;
+        if (p.吸血) P.hp = Math.min(P.maxHp, P.hp + 本次 * p.吸血);
         addParts(p.x, p.y, '#ffffff', 4, 60);
         /* 扁鹊：落点范围 AOE + 中毒 */
         if (p.aoe){
@@ -981,7 +1164,7 @@ function update(dt){
         /* 贯穿：长弓主词条，子弹能穿过去继续打 */
         const 已打 = p.hit || (p.hit = []);
         if (p.pierce > 0 && !已打.includes(e)){
-          已打.push(e); p.pierce--;
+          已打.push(e); p.pierce--; p.穿层 = (p.穿层 || 0) + 1;
         } else p.dead = true;
         break;
       }
@@ -1005,6 +1188,7 @@ function update(dt){
         const 毒伤 = P.atk * (0.5 + 0.2 * (Math.max(1, P.poison) - 1));
         e.hp -= 毒伤;
         P.dmgDealt += 毒伤;
+        if (P.武器 && (武器表[P.武器] || {}).毒吸) P.hp = Math.min(P.maxHp, P.hp + 毒伤 * 0.5);
         if (Math.random() < 0.25)
           addText(e.x + rand(-3,3), e.y - e.h - 4, Math.round(毒伤) + '', '#8cd94a');
       }
@@ -1014,7 +1198,7 @@ function update(dt){
     }
 
     const dx = P.x - e.x, dist = Math.abs(dx);
-    let sp = e.spd * (e.slowT > 0 ? (1 - P.frost) : 1);
+    let sp = e.spd * (e.slowT > 0 ? (1 - Math.max(P.frost, e.slowVal || 0)) : 1);
     e.face = dx > 0 ? 1 : -1;
 
     let dir = 0;
@@ -1385,6 +1569,18 @@ function drawPlayer(){
   }
 }
 
+function drawWeapon(){
+  if (!P.武器) return;
+  const w = 武器表[P.武器]; if (!w) return;
+  const x = Math.round(P.x), y = Math.round(P.y - 32);
+  px(x - 3, y - 2, 7, 4, '#7fffd4');                 /* 枪管 */
+  px(x - 9, y - 1, 7, 3, '#4a90d9');                 /* 枪身 */
+  px(x - 8, y + 2, 3, 4, '#2c3557');                 /* 握把 */
+  px(x - 10, y - 3, 3, 3, '#ffe066');                /* 准星 */
+  const r = 1 - clamp(P.武器Cd / w.cd, 0, 1);
+  px(x - 9, y - 6, 18, 1, 'rgba(0,0,0,.55)');
+  px(x - 9, y - 6, Math.round(18 * r), 1, '#ffe066');
+}
 function drawOrbs(){
   if (!P.卫球) return;
   for (let i = 0; i < P.卫球; i++){
@@ -1535,7 +1731,8 @@ function syncHUD(){
                  + ' · 击杀 ' + P.kills);
   HUD.xpBar.classList.toggle('floor', (P.无升级秒 || 0) >= 60);
   const 主 = P.主词条 ? 按id找词条(P.主词条) : null;
-  设文(HUD.mainPk, 主 ? '主词条 · ' + 主.n : '');
+  const 枪 = P.武器 ? 武器表[P.武器] : null;
+  设文(HUD.mainPk, (主 ? '主词条 · ' + 主.n : '') + (枪 ? '　🔫 ' + 枪.n : ''));
   HUD.mainPk.classList.toggle('hide', !主);
   HUD.hud.classList.toggle('hide', state === 'start');
 }
@@ -1576,6 +1773,7 @@ function render(){
     px(p.x - 1, p.y - 1, 3, 3, '#ff8a4c');
   }
   drawPlayer();
+  drawWeapon();
   drawOrbs();
   for (const q of parts){
     ctx.globalAlpha = clamp(q.life / q.max, 0, 1);
