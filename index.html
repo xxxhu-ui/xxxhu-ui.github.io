@@ -121,6 +121,17 @@
   #hud .row .polx.on{color:#9a6fc0}
   #hudR{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:.1em;
         text-shadow:0 1px 3px #000,0 0 4px #000}
+  #hudR #hStats{margin-top:.5em;display:flex;flex-direction:column;align-items:flex-end;
+    gap:.12em;font-size:.82em;color:#7d8cb5;text-shadow:0 1px 2px #000,0 0 3px #000}
+  #hudR #hStats .st{white-space:nowrap;line-height:1.4}
+  #hudR #hStats b{font-weight:bold}
+  #hudR #hStats i{font-style:normal;color:#5f7099;margin-left:.45em}
+  #hudR #stAtk{color:#ffc98a}
+  #hudR #stCrit,#hudR #stCdmg{color:#ffe066}
+  #hudR #stDps{color:#7fd4ff}
+  #hudR #stRange{color:#a8c4e8}
+  #hudR #stRev{color:#ff8a9a}
+  #hudR #stRev.off{color:#5f7099}
   #hudR #hWave{color:#cfe0ff;font-weight:bold;font-size:1.15em}
   #hudR #hTime{color:#94a2c8;font-size:.8em}
   #ann{position:absolute;left:0;right:0;top:26%;text-align:center;pointer-events:none;
@@ -159,6 +170,12 @@
         <span id="hWave"></span>
         <span id="hTime"></span>
         <span id="hSoul" style="color:#ffd94a;font-size:.8em"></span>
+        <div id="hStats">
+          <div class="st">攻 <b id="stAtk"></b><i id="stProj"></i><i id="stAspd"></i></div>
+          <div class="st">暴击 <b id="stCrit"></b><i>暴伤</i><b id="stCdmg"></b></div>
+          <div class="st">DPS <b id="stDps"></b><i>射程</i><b id="stRange"></b></div>
+          <div class="st">复活 <b id="stRev"></b><i id="stExtra"></i></div>
+        </div>
       </div>
     </div>
     <div id="ann"></div>
@@ -193,7 +210,8 @@
     每产出 18 只幽魂 → 全部湮灭，聚合成 3 条命的<b>大幽魂</b>（唯一；至少隔 3 波才会再来一只）<br>
     打死大幽魂有<b>奖励</b>：50% 让所有怪经验 +50%，50% 让所有怪金币 +75%（都能叠加）<br>
     19 级之后，每打死一只大幽魂会开一次<b>幽魂商店</b>，花金币买词条<br>
-    <b style="color:#ffd94a">金币</b> = 怪死后掉的金色圆片，先攒着（暂时还没地方花）<br>
+    <b style="color:#ffd94a">金币</b> = 怪死后掉的金色圆片，商店里花（19 级后每打死一只大幽魂开一次）<br>
+    右上角一直显示<b>算完的最终属性</b>：攻击 / 弹数 / 攻速 / 暴击 / 暴伤 / DPS / 射程 / 复活次数<br>
     <b style="color:#ffd94a">黄帽窃贼</b> = 抢你经验球，抢满 5 秒就换一条命
   </div>
   <button class="btn" id="bStart">开 始</button>
@@ -2566,6 +2584,9 @@ const HUD = {
   gold: $('goldFill'), goldT: $('goldTxt'),
   lv: $('hLv'), perk: $('hPerk'), pol: $('hPol'), polx: $('hPolX'),
   wave: $('hWave'), time: $('hTime'), ann: $('ann'), mainPk: $('hMainPk'), soul: $('hSoul'),
+  stAtk: $('stAtk'), stProj: $('stProj'), stAspd: $('stAspd'), stCrit: $('stCrit'),
+  stCdmg: $('stCdmg'), stDps: $('stDps'), stRange: $('stRange'),
+  stRev: $('stRev'), stExtra: $('stExtra'),
 };
 function 设文(el, v){ if (el && el._v !== v){ el._v = v; el.textContent = v; } }
 function 设宽(el, r){
@@ -2613,6 +2634,27 @@ function syncHUD(){
   if (P.魂经验) 魂.push('魂经验 +' + Math.round(P.魂经验 * 100) + '%');
   if (P.魂金币) 魂.push('魂金币 +' + Math.round(P.魂金币 * 100) + '%');
   设文(HUD.soul, 魂.join('　'));
+
+  /* ---- 右上角：算完的最终属性 ----
+     攻击 = 基础攻击 ×(1+攻击力百分比)，就是真正打出去的那个数
+     DPS  = 攻击 × 弹数 × 暴击期望 ÷ 攻速（和首领血量用的是同一个公式）*/
+  设文(HUD.stAtk,   Math.round(P.atk));
+  设文(HUD.stProj,  '×' + P.projCount);
+  设文(HUD.stAspd,  (1 / P.atkInterval).toFixed(1) + '/s');
+  设文(HUD.stCrit,  Math.round(P.crit * 100) + '%');
+  设文(HUD.stCdmg,  P.critDmg.toFixed(2) + '×');
+  设文(HUD.stDps,   Math.round(玩家DPS()));
+  设文(HUD.stRange, Math.round(P.range));
+  设文(HUD.stRev,   '×' + (P.复活次数 || 0));
+  HUD.stRev.classList.toggle('off', !(P.复活次数 > 0));
+  const 附 = [];
+  if (P.shieldMax) 附.push('盾 ' + P.shield + '/' + P.shieldMax);
+  if (P.lifesteal) 附.push('吸 ' + Math.round(P.lifesteal * 100) + '%');
+  if (P.dr)        附.push('减伤 ' + Math.round(P.dr * 100) + '%');
+  if (P.thorns)    附.push('荆棘 ' + P.thorns);
+  if (P.poison)    附.push('毒 ' + P.poison);
+  if (P.frost)     附.push('冰 ' + Math.round(P.frost * 100) + '%');
+  设文(HUD.stExtra, 附.join('　'));
   HUD.mainPk.classList.toggle('hide', !主);
   HUD.hud.classList.toggle('hide', state === 'start');
 }
