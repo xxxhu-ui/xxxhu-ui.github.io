@@ -99,6 +99,8 @@
                  line-height:1.8em;color:#fff;font-weight:bold;
                  text-shadow:0 1px 2px #000,0 0 3px #000}
   #hud .xpbar{height:.75em}
+  #hud .goldbar{height:1.0em}
+  #hud .bar i.gold{background:linear-gradient(#ffe89a,#d9a017)}
   #hud .xpbar.floor{box-shadow:0 0 0 1px #ffe066,0 0 .5em #ffe066}
   #hud .row{display:flex;gap:.7em;align-items:baseline;font-size:.8em;color:#94a2c8;
             text-shadow:0 1px 3px #000,0 0 4px #000}
@@ -134,6 +136,7 @@
       <div id="hudL">
         <div class="bar"><i id="hpFill" class="hp"></i><span id="hpTxt"></span></div>
         <div class="bar xpbar" id="xpBar"><i id="xpFill" class="xp"></i></div>
+        <div class="bar goldbar" id="goldBar"><i id="goldFill" class="gold"></i><span id="goldTxt"></span></div>
         <div class="row">
           <span id="hLv" class="lv"></span>
           <span id="hPerk"></span>
@@ -177,6 +180,7 @@
     <b style="color:#c77dff">污染值</b> 每 +1，怪死后多 10% 概率留下「幽魂」；幽魂超过 5 只 → 聚合成<b>大幽魂</b><br>
     「幽魂」悬停时<b>无形</b>（打不到），俯冲落地后有 1 秒<b>破绽</b>（伤害翻倍）<br>
     每产出 10 只幽魂 → 全部湮灭，聚合成 3 条命的<b>大幽魂</b>（唯一，新的替换旧的；至少隔 2 波才会再来一只）<br>
+    <b style="color:#ffd94a">金币</b> = 怪死后掉的金色圆片，先攒着（暂时还没地方花）<br>
     <b style="color:#ffd94a">黄帽窃贼</b> = 抢你经验球，抢满 5 秒就换一条命
   </div>
   <button class="btn" id="bStart">开 始</button>
@@ -262,7 +266,7 @@ const PERKS = [
   {id:'crit',  n:'锐眼', d:'暴击率 +7%',           f:()=>P.crit = Math.min(1, P.crit + 0.07)},
   {id:'cdmg',  n:'致命', d:'暴击伤害 +35%',         f:()=>P.critDmg += 0.35},
   {id:'hp',    n:'铁壁', d:'最大生命 +38，并立即回复', max:6, f:()=>{P.maxHp += 38; P.hp += 38;}},
-  {id:'regen', n:'再生', d:'每秒回血 +2.5，并 +1 次复活（回半血，10 分钟 CD）', max:6,
+  {id:'regen', n:'再生', d:'每秒回血 +2.5，并 +1 次复活（回 70% 血 + 5 秒无敌 + 复活瞬间清空敌弹）', max:6,
                f:()=>{P.regen += 2.5; P.复活次数 = (P.复活次数 || 0) + 1;}},
   {id:'dr',    n:'韧性', d:'受到的伤害 -10%',  max:6, f:()=>P.dr = Math.min(0.62, P.dr + 0.10)},
   {id:'move',  n:'迅捷', d:'移动速度 +11%',    max:6, f:()=>P.speed *= 1.11},
@@ -495,7 +499,7 @@ function reset(){
     污染: 0, dr: 0, 无升级秒: 0, 幽魂批: 0, 幽魂冷却: 0,
     双向: 0, 震地: 0, 回响: 0, 卫球: 0, 背水: 0, 连锁: 0,
     基攻: 7, atkPct: 0, 主词条: null, 主卡池: [], 已删词条: [], 已选唯一: null,
-    选序: [], 复活次数: 0, 复活CD: 0, 二段跳: 0, 跳数: 0, 贯穿: 0,
+    选序: [], 复活次数: 0, 二段跳: 0, 跳数: 0, 贯穿: 0, 金币: 0,
     hpup: 0, snipeCd: 0, execCd: 0, bianCd: 0, iceCd: 0, critSplit: 0, splitp: 0,
     snipe: 0, execute: 0, bianque: 0, ice: 0, 跳锁: 0,
     武器: null, 武器Cd: 0, 主词条2: null, 连击目标: null, 连击层: 0,
@@ -909,6 +913,17 @@ function killEnemy(e){
   if (e.掉球) orbs.push({x: e.x + rand(-10,10), y: e.y - e.h/2, vy: rand(-80,-30),
              vx: rand(-40,40), val: Math.max(2, Math.round(e.xp * 0.6)), life: 22, dead: false});
 
+  /* ══ 金币 ══
+     50% 概率掉一枚（不是每只都掉，否则地上会铺满金币球，看不清经验球）
+     数值（占位，后面还要调）：普通怪 1 + 波数×0.28；精英 ×3；首领 ×15
+     一局大概能攒 2000~3500 金 */
+  if (Math.random() < 0.50){
+    const 金 = Math.max(1, Math.round((1 + wave * 0.28) *
+                 (e.boss ? 15 : (e.elite ? 3 : 1))));
+    orbs.push({x: e.x + rand(-6, 6), y: e.y - e.h/2, vy: rand(-80, -35),
+      vx: rand(-40, 40), 金: 1, val: 金, life: 26, dead: false});
+  }
+
   /* ══ 污染值：普通怪死后，多出 10% × 污染值 的概率留下一只「幽魂」 ══
      幽魂自己不再产幽魂，子眼也不算 —— 否则会变成无限连锁 */
   if (e.type !== 'ghost' && e.type !== 'bigghost' && e.type !== 'eye'){
@@ -942,16 +957,35 @@ function damagePlayer(d){
   if (P.hp <= 0){ P.hp = 0; die(); }
 }
 function die(){
-  /* 再生：攒下来的复活次数，回半血并给 3 秒无敌（内置 10 分钟 CD）*/
-  if (P.复活次数 > 0 && P.复活CD <= 0){
+  /* ══ 再生：每层 +1 次复活 ══
+     【旧 bug】这里原本还有一句 P.复活CD = 600（10 分钟冷却），
+     结果选了 6 层「再生」也只能复活 1 次 —— 后 5 次全被冷却吃掉，
+     玩家死第二次就直接真死。次数就是次数，冷却已删掉。*/
+  if (P.复活次数 > 0){
     P.复活次数--;
-    P.复活CD   = 600;
-    P.hp       = P.maxHp * 0.5;
-    P.iframe   = 3;
-    shake      = 9;
+    P.hp     = Math.max(P.hp, P.maxHp * 0.7);
+    P.iframe = 5;                       /* 5 秒无敌，比原来长 */
+    shake    = 12;
+    屏色 = '#ffe066';  屏力 = 0.85;
+    /* ══ 复活冲击 ══
+       贴着首领复活时，「回半血 + 3 秒无敌」不够 ——
+       无敌一过就被同一招再打死，玩家体感就是「复活了但立刻就死」。
+       所以复活瞬间做四件事：清空敌弹、清空激光、清空地面震荡波、把所有怪推开。*/
+    for (const p of eprojs) p.dead = true;
+    beams.length = 0;
+    waves.length = 0;
+    for (const e of enemies){
+      if (e.dead) continue;
+      e.kb = (e.x < P.x ? -1 : 1) * 900;   /* 推开 ~100 像素，给你反应时间 */
+      e.charging = 0;  e.wind = 0;  e.ult = 0;  e.蓄 = 0;  e.连冲 = 0;
+      if (e.type === 'ghost'){ e.俯冲 = 0; e.僵直 = 0.9; }
+    }
+    rings.push({x: P.x, y: GROUND, r: 6, max: 210, life: 0.75, all: 0.75, color: '#ffe066'});
     addText(P.x, P.y - 40, '复 活 ！', '#ffe066');
-    addParts(P.x, P.y - 9, '#ffe066', 44, 240);
+    addParts(P.x, P.y - 9, '#ffe066', 48, 250);
     播报('再生 · 复活（还剩 ' + P.复活次数 + ' 次）');
+    呼(0.50, 0.075, 500, 1400);
+    响(440, 0.45, 'triangle', 0.055, 880);
     return;
   }
   state = 'dead'; keys = {};
@@ -959,7 +993,7 @@ function die(){
     '存活 <b>' + timeAlive.toFixed(1) + '</b> 秒<br>' +
     '抵达第 <b>' + wave + '</b> 波<br>' +
     '等级 <b>Lv ' + P.level + '</b>　词条 <b>' + perkCount() + '</b> 个<br>' +
-    '击杀 <b>' + P.kills + '</b> 个<br>' +
+    '击杀 <b>' + P.kills + '</b> 个　金币 <b>' + (P.金币 || 0) + '</b><br>' +
     '总伤害 <b>' + Math.round(P.dmgDealt) + '</b>';
   $('dead').classList.remove('hide');
 }
@@ -1266,7 +1300,6 @@ function update(dt){
   while (P.轨迹.length && timeAlive - P.轨迹[0].t > 1.0) P.轨迹.shift();
 
   /* ---- 主词条解锁的进阶效果 ---- */
-  if (P.复活CD > 0) P.复活CD -= dt;
   if (P.幽魂冷却 > 0) P.幽魂冷却 -= dt;      /* 大幽魂聚合冷却：至少隔 2 波 */
   if (P.hpup){                                  /* 铁壁·续：上限随时间涨 */
     const 增 = (5 * P.hpup) / 60 * dt;
@@ -1930,7 +1963,17 @@ function update(dt){
       o.y  += o.vy * dt;
       if (o.y > GROUND - 3){ o.y = GROUND - 3; o.vy *= -0.35; o.vx *= 0.7; }
     }
-    if (d < 9){ addXp(o.val); o.dead = true; addParts(o.x, o.y, '#7fd4ff', 3, 40); }
+    if (d < 9){
+      if (o.金){
+        P.金币 = (P.金币 || 0) + o.val;
+        addParts(o.x, o.y, '#ffd94a', 4, 55);
+        if (o.val >= 15) addText(o.x, o.y - 7, '+' + o.val, '#ffd94a');
+      } else {
+        addXp(o.val);
+        addParts(o.x, o.y, '#7fd4ff', 3, 40);
+      }
+      o.dead = true;
+    }
     if (o.life <= 0) o.dead = true;
   }
   orbs = orbs.filter(o => !o.dead);
@@ -2380,8 +2423,10 @@ function drawEnemy(e){
 }
 
 /* ============================ HUD：全部用 DOM 画，字体清晰 ============================ */
+const 金币每格 = 100;     /* 金币条每满一格 = 100 金（先占位，等定了花在哪儿再改） */
 const HUD = {
   hp: $('hpFill'), hpT: $('hpTxt'), xp: $('xpFill'), xpBar: $('xpBar'), hud: $('hud'),
+  gold: $('goldFill'), goldT: $('goldTxt'),
   lv: $('hLv'), perk: $('hPerk'), pol: $('hPol'), polx: $('hPolX'),
   wave: $('hWave'), time: $('hTime'), ann: $('ann'), mainPk: $('hMainPk'),
 };
@@ -2408,6 +2453,8 @@ function 播报(t){
 function syncHUD(){
   设宽(HUD.hp, P.hp / P.maxHp);
   设宽(HUD.xp, P.xp / P.xpNeed);
+  设宽(HUD.gold, ((P.金币 || 0) % 金币每格) / 金币每格);
+  设文(HUD.goldT, (P.金币 || 0) + ' 金');
   设文(HUD.hpT, Math.ceil(P.hp) + ' / ' + P.maxHp);
   设文(HUD.lv, 'Lv ' + P.level);
   设文(HUD.perk, '词条 ' + perkCount());
@@ -2438,6 +2485,14 @@ function render(){
   ctx.translate(-Math.round(cam), 0);
   /* 经验球 */
   for (const o of orbs){
+    if (o.金){
+      /* 金币：会一闪一闪的黄色小圆片 */
+      const 闪 = Math.floor(timeAlive * 6 + o.x) % 4 === 0;
+      px(o.x - 3, o.y - 3, 6, 6, '#6b4700');
+      px(o.x - 2, o.y - 2, 4, 4, 闪 ? '#fff8cc' : '#ffd94a');
+      px(o.x - 1, o.y - 2, 1, 2, '#fffbe0');
+      continue;
+    }
     px(o.x - 2, o.y - 2, 4, 4, '#1b6f9e');
     px(o.x - 1, o.y - 1, 2, 2, '#9fe8ff');
   }
