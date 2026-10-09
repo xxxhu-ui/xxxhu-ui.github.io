@@ -38,6 +38,16 @@
   .card.unlock{border-color:#7fffd4;background:#0f2620;
     box-shadow:0 0 12px rgba(127,255,212,.28)}
   .card.unlock .n{color:#7fffd4}
+  .card.shop{border-color:#d9a017;background:#231c0a;padding:11px 15px;margin:8px 0}
+  .card.shop .n{color:#ffd94a;font-size:16px}
+  .card.shop .d{font-size:12.5px;margin-top:3px}
+  .card.adv{border-color:#7fffd4;background:#0f2620;padding:11px 15px;margin:8px 0;
+    box-shadow:0 0 12px rgba(127,255,212,.28)}
+  .card.adv .n{color:#7fffd4;font-size:16px}
+  .card.adv .d{font-size:12.5px;margin-top:3px}
+  .card .price{display:block;font-size:13px;font-weight:bold;color:#ffd94a;margin-top:5px}
+  .card.adv .price{color:#7fffd4}
+  .card.cant{opacity:.42}
   .card.uni{border-color:#ffe066;background:#251f0e;
     box-shadow:0 0 14px rgba(255,224,102,.35)}
   .card.uni .n{color:#ffd94a}
@@ -148,6 +158,7 @@
       <div id="hudR">
         <span id="hWave"></span>
         <span id="hTime"></span>
+        <span id="hSoul" style="color:#ffd94a;font-size:.8em"></span>
       </div>
     </div>
     <div id="ann"></div>
@@ -179,7 +190,9 @@
     <b style="color:#c77dff">污染值</b> = 每 10 级 +1，怪的基础数值 ×1.25（指数叠加）<br>
     <b style="color:#c77dff">污染值</b> 每 +1，怪死后多 10% 概率留下「幽魂」；幽魂超过 5 只 → 聚合成<b>大幽魂</b><br>
     「幽魂」悬停时<b>无形</b>（打不到），俯冲落地后有 1 秒<b>破绽</b>（伤害翻倍）<br>
-    每产出 10 只幽魂 → 全部湮灭，聚合成 3 条命的<b>大幽魂</b>（唯一，新的替换旧的；至少隔 2 波才会再来一只）<br>
+    每产出 18 只幽魂 → 全部湮灭，聚合成 3 条命的<b>大幽魂</b>（唯一；至少隔 3 波才会再来一只）<br>
+    打死大幽魂有<b>奖励</b>：50% 让所有怪经验 +50%，50% 让所有怪金币 +75%（都能叠加）<br>
+    19 级之后，每打死一只大幽魂会开一次<b>幽魂商店</b>，花金币买词条<br>
     <b style="color:#ffd94a">金币</b> = 怪死后掉的金色圆片，先攒着（暂时还没地方花）<br>
     <b style="color:#ffd94a">黄帽窃贼</b> = 抢你经验球，抢满 5 秒就换一条命
   </div>
@@ -196,6 +209,15 @@
   <h2>选 择 强 化</h2>
   <div style="font-size:13px;color:#8d9bc4;margin-bottom:10px">等级越高，来得越慢</div>
   <div id="cards"></div>
+</div>
+
+<div id="shop" class="ov hide">
+  <h2>幽 魂 商 店</h2>
+  <div style="font-size:13px;color:#8d9bc4;margin-bottom:10px">
+    击败大幽魂的奖励 · 你现在有 <b id="shGold" style="color:#ffd94a;font-size:16px">0</b> 金币
+  </div>
+  <div id="shopCards" style="width:100%;max-width:470px;max-height:60vh;overflow-y:auto"></div>
+  <button class="btn ghost" id="bShopClose" style="min-width:11em;margin-top:8px">离 开 商 店</button>
 </div>
 
 <div id="dead" class="ov hide">
@@ -292,7 +314,7 @@ const UNLOCK = [
   {id:'aspd2',  n:'疾风·续', k:1, max:6, d:'攻击速度 +16%（把疾风砍掉的那一半补回来）',
    f:()=>P.atkInterval *= 0.862},
   {id:'critsplit', n:'裂空', k:1, max:8,
-   d:'命中时按「暴击率 × 30%」概率让子弹分裂（每层 +10%，最高 ×100%）',
+   d:'命中时按「暴击率 × 30%」概率让子弹分裂（每层 +10%，最高 ×100%；每颗子弹只裂一次）',
    f:()=>P.critSplit = Math.min(1, (P.critSplit || 0) + 0.10)},
   {id:'snipe',  n:'致命一击', k:1, max:7,
    d:'每 10 秒发射一颗重弹，伤害 = 攻击力 × (1 + 暴击伤害)；每层 CD −1 秒（最少 4 秒）',
@@ -500,6 +522,7 @@ function reset(){
     双向: 0, 震地: 0, 回响: 0, 卫球: 0, 背水: 0, 连锁: 0,
     基攻: 7, atkPct: 0, 主词条: null, 主卡池: [], 已删词条: [], 已选唯一: null,
     选序: [], 复活次数: 0, 二段跳: 0, 跳数: 0, 贯穿: 0, 金币: 0,
+    魂经验: 0, 魂金币: 0, 商店待开: 0, 商店主词条: [],
     hpup: 0, snipeCd: 0, execCd: 0, bianCd: 0, iceCd: 0, critSplit: 0, splitp: 0,
     snipe: 0, execute: 0, bianque: 0, ice: 0, 跳锁: 0,
     武器: null, 武器Cd: 0, 主词条2: null, 连击目标: null, 连击层: 0,
@@ -589,7 +612,7 @@ function addXp(v){
    升级、选完词条、选完主词条、选完武器之后，全部走这里。
    否则一次性升多级时，后面的特殊界面会被普通词条面板顶掉。   */
 function 推进选择(){
-  if (state === 'dead' || state === 'start' || state === 'pause') return;
+  if (state === 'dead' || state === 'start' || state === 'pause' || state === 'shop') return;
   /* 候选为空时直接跳过，否则会弹出一个没有卡片的界面卡死 */
   if (!P.主词条 && P.level >= 9 && 主词条候选().length > 0){ 开主词条选择(); return; }
   if (!P.武器 && P.level >= 19 && (武器伙伴[P.主词条] || []).length > 0){ 开武器选择(); return; }
@@ -761,6 +784,93 @@ function takePerk(o){
   推进选择();
 }
 
+/* ══════════════════════ 幽魂商店 ══════════════════════
+   每击败一次大幽魂开一次（19 级之后）。
+   一共 5 栏：前 4 栏随机词条，第 5 栏固定卖「进阶词条」——
+   条件是你某个词条已经叠到 6 层以上，而它有对应的进阶（见 解锁表）。
+   买到的进阶算主词条（HUD 上会标 ⭐），但因为商店 19 级之后才开，
+   那时候武器早就合成完了，所以商店里的主词条不能拿去合成武器。*/
+/* 价格是照着「一局大概能攒 6000~7000 金币」定的：
+   目标是整局在商店里只额外买到 15~20 层词条（普通局本身约 64 层）。
+   第一次买 220，同一个词条叠第二次 390，第三次 560……
+   实测：改之前一局能买到 151 层（太肥），改完约 18 层。*/
+const 商店基础价 = 150, 商店每层价 = 250;
+const 进阶基础价 = 400, 进阶每层价 = 350;
+let 商店货架 = [];
+
+function 商店价格(o){ return o.k ? (进阶基础价 + (P.inv[o.id] || 0) * 进阶每层价)
+                                 : (商店基础价 + (P.inv[o.id] || 0) * 商店每层价); }
+
+/* 找一个「已经叠到 6 层以上、而且有进阶词条」的词条，返回它的进阶 */
+function 商店进阶词条(){
+  let 最好 = null, 最多 = 5;
+  for (const p of PERKS){
+    const n = P.inv[p.id] || 0;
+    if (n > 最多 && (解锁表[p.id] || []).length){ 最多 = n; 最好 = p.id; }
+  }
+  return 最好 ? 按id找词条(解锁表[最好][0]) : null;
+}
+function 刷商店(){
+  const box = $('shopCards');  box.innerHTML = '';
+  设文($('shGold'), P.金币 || 0);
+  商店货架.forEach(o => {
+    const st  = P.inv[o.id] || 0;
+    const 满  = !!(o.max && st >= o.max);
+    const 价  = 商店价格(o);
+    const 穷  = (P.金币 || 0) < 价;
+    const b = document.createElement('button');
+    b.className = 'card ' + (o.k ? 'adv' : 'shop') + (满 || 穷 ? ' cant' : '');
+    b.innerHTML = '<span class="n">' + o.n
+                + (o.k ? '<i class="tag2">进阶 · 主词条</i>' : '') + '</span>'
+                + '<span class="d">' + o.d + '</span>'
+                + '<span class="s">已叠 ' + st + ' 层' + (o.max ? ' / ' + o.max : '') + '</span>'
+                + '<span class="price">'
+                + (满 ? '已 满' : (价 + ' 金' + (穷 ? '　（金币不够）' : '')))
+                + '</span>';
+    b.onclick = () => 买词条(o);
+    box.appendChild(b);
+  });
+}
+function 买词条(o){
+  const st = P.inv[o.id] || 0;
+  if (o.max && st >= o.max) return;
+  const 价 = 商店价格(o);
+  if ((P.金币 || 0) < 价){ 响(170, 0.12, 'sawtooth', 0.05, 110); return; }
+  P.金币 -= 价;
+  o.f();
+  P.inv[o.id] = st + 1;
+  if (o.k){
+    P.商店主词条 = P.商店主词条 || [];
+    if (!P.商店主词条.includes(o.id)) P.商店主词条.push(o.id);
+  }
+  响(940, 0.10, 'triangle', 0.05, 1420);
+  addText(P.x, P.y - 34, o.n, '#ffd94a');
+  刷商店();
+}
+function 开商店(){
+  if (state !== 'play') return;
+  state = 'shop'; keys = {};
+  const 池 = PERKS.filter(p => !P.已删词条.includes(p.id))
+                  .filter(p => !p.max || (P.inv[p.id] || 0) < p.max);
+  const 临时 = 池.slice();
+  商店货架 = [];
+  while (商店货架.length < 4 && 临时.length)
+    商店货架.push(临时.splice((Math.random() * 临时.length) | 0, 1)[0]);
+  const 进 = 商店进阶词条();
+  if (进 && (!进.max || (P.inv[进.id] || 0) < 进.max)) 商店货架.push(进);
+  else if (临时.length) 商店货架.push(临时.splice((Math.random() * 临时.length) | 0, 1)[0]);
+  刷商店();
+  $('shop').classList.remove('hide');
+  响(1046, 0.16, 'triangle', 0.05, 1568);
+  播报('幽魂商店 · 开张');
+}
+function 关商店(){
+  $('shop').classList.add('hide');
+  state = 'play';
+  推进选择();
+}
+$('bShopClose').onclick = 关商店;
+
 /* ============================ 伤害 ============================ */
 function hurtEnemy(e, d, isCrit){
   if (无形(e)) return;                      /* 悬停中的幽魂：打不到 */
@@ -889,7 +999,18 @@ function killEnemy(e){
     P.幽魂批 = 0;
     P.幽魂冷却 = 幽魂冷却秒;
     屏色 = '#ffffff';  屏力 = 0.95;  shake = 13;
-    播报('大幽魂 · 湮灭');
+    /* ══ 击败奖励：50% 给「其他怪更多经验」，50% 给「更多金币」 ══ */
+    if (Math.random() < 0.5){
+      P.魂经验 = (P.魂经验 || 0) + 0.5;
+      播报('大幽魂 · 湮灭　奖励：所有怪经验 +50%（累计 +' + Math.round(P.魂经验 * 100) + '%）');
+    } else {
+      P.魂金币 = (P.魂金币 || 0) + 0.75;
+      for (let i = 0; i < 10; i++)
+        orbs.push({x: e.x + rand(-70, 70), y: e.y - 46, vy: rand(-150, -70), vx: rand(-90, 90),
+          金: 1, val: Math.max(2, Math.round(2 + wave * 0.5)), life: 30, dead: false});
+      播报('大幽魂 · 湮灭　奖励：所有怪金币 +75%（累计 +' + Math.round(P.魂金币 * 100) + '%）');
+    }
+    if (P.level >= 19) P.商店待开 = 1;      /* 19 级之后才开商店 */
     呼(0.45, 0.080, 1400, 180);  响(320, 0.35, 'triangle', 0.055, 70);
     rings.push({x: e.x, y: GROUND, r: 6, max: 230, life: 0.9, all: 0.9, color: '#ffffff'});
     for (let i = 0; i < 64; i++)
@@ -909,7 +1030,8 @@ function killEnemy(e){
 
   /* 掉的球：把偷走的经验一起还给你 */
   orbs.push({x: e.x, y: e.y - e.h/2, vy: rand(-70,-25), vx: rand(-30,30),
-             val: e.xp + (e.stolen || 0), life: 22, dead: false});
+             val: Math.round((e.xp + (e.stolen || 0)) * (1 + (P.魂经验 || 0))),
+             life: 22, dead: false});
   if (e.掉球) orbs.push({x: e.x + rand(-10,10), y: e.y - e.h/2, vy: rand(-80,-30),
              vx: rand(-40,40), val: Math.max(2, Math.round(e.xp * 0.6)), life: 22, dead: false});
 
@@ -919,7 +1041,7 @@ function killEnemy(e){
      一局大概能攒 2000~3500 金 */
   if (Math.random() < 0.50){
     const 金 = Math.max(1, Math.round((1 + wave * 0.28) *
-                 (e.boss ? 15 : (e.elite ? 3 : 1))));
+                 (e.boss ? 15 : (e.elite ? 3 : 1)) * (1 + (P.魂金币 || 0))));
     orbs.push({x: e.x + rand(-6, 6), y: e.y - e.h/2, vy: rand(-80, -35),
       vx: rand(-40, 40), 金: 1, val: 金, life: 26, dead: false});
   }
@@ -928,8 +1050,13 @@ function killEnemy(e){
      幽魂自己不再产幽魂，子眼也不算 —— 否则会变成无限连锁 */
   if (e.type !== 'ghost' && e.type !== 'bigghost' && e.type !== 'eye'){
     if (Math.random() < Math.min(1, 0.10 * (P.污染 || 0))){
-      pendingSpawns.push({type: 'ghost', opts: {x: e.x, noElite: true}});
       addParts(e.x, e.y - e.h/2, '#dfe8ff', 12, 120);
+      /* 场上同时存在的幽魂最多 10 只 —— 概率不变，只是不让屏幕被塞满、掉帧。
+         计数照常涨，所以聚合节奏不受影响。*/
+      let 现存魂 = 0;
+      for (const g of enemies) if (g.type === 'ghost' && !g.dead) 现存魂++;
+      if (现存魂 >= 10) { /* 这一只不刷出来，但计数照加 */ }
+      else pendingSpawns.push({type: 'ghost', opts: {x: e.x, noElite: true}});
       /* 计数封顶在阈值，冷却期里也不会偷偷攒超过一次的量 */
       if ((P.幽魂批 || 0) < 幽魂阈值){
         P.幽魂批 = (P.幽魂批 || 0) + 1;
@@ -1170,8 +1297,8 @@ function 幽灵AI(e, dt, dist, dx){
    触发：产出过 幽魂阈值 只幽魂（或场上同时 幽魂阈值 只）
    冷却：聚合之后至少隔 幽魂冷却秒（= 2 波）才会再聚合
         —— 不然大幽魂会被反复刷新，永远死不掉，屏幕上一直挂着它 */
-const 幽魂阈值   = 10;
-const 幽魂冷却秒 = 40;
+const 幽魂阈值   = 18;      /* 产出 18 只幽魂才聚合（原来是 10）*/
+const 幽魂冷却秒 = 60;      /* 聚合后至少隔 60 秒 = 3 波 */
 function 幽魂结算(){
   if ((P.幽魂冷却 || 0) > 0) return;
   let 数 = 0;
@@ -1510,12 +1637,18 @@ function update(dt){
           addParts(p.x, p.y, '#8cd94a', 16, 130);
           rings.push({x: p.x, y: p.y, r: 4, max: R0, life: 0.3, all: 0.3, color: '#8cd94a'});
         }
-        /* 裂空：命中时按暴击率比例分裂 */
-        if (P.critSplit && Math.random() < P.crit * P.critSplit){
+        /* 裂空：命中时按暴击率比例分裂
+           ⚠【曾经的崩溃 bug】这里以前没有 !p.已分裂 ——
+           子弹裂出来的子弹还能继续裂，判据用的是「玩家有没有裂空」而不是「这颗弹裂过没有」。
+           暴击率一接近 100%，就是 1 → 2 → 4 → 8 …… 指数爆炸：
+           实测 暴击 100% + 裂空 8 层 时，几帧之内子弹涨到几万颗，浏览器直接卡死 + 内存爆掉。
+           现在每颗子弹只裂一次（和裂空枪的「只裂一次」一致），再加一道总数硬上限兜底。*/
+        if (P.critSplit && !p.已分裂 && projs.length < 600 &&
+            Math.random() < P.crit * P.critSplit){
           for (let k = -1; k <= 1; k += 2){
             const a2 = Math.atan2(p.vy, p.vx) + k * 0.55;
             projs.push({x: p.x, y: p.y, vx: Math.cos(a2)*P.projSpeed, vy: Math.sin(a2)*P.projSpeed,
-              dmg: p.dmg * 0.6, crit: p.crit, life: 0.8, dead: false, chain: 0});
+              dmg: p.dmg * 0.6, crit: p.crit, life: 0.8, dead: false, chain: 0, 已分裂: 1});
           }
         }
         /* 连锁闪电：弹向最近的另一个敌人 */
@@ -1586,7 +1719,8 @@ function update(dt){
       let orb = null, bd = 1e9;
       if (e.ateCycle < 2){                 /* 一个周期最多吞 2 个 */
         for (const o of orbs){
-          if (o.dead) continue;
+          /* 金币球不能被偷 —— 偷了会变成经验，等于金币凭空蒸发 */
+          if (o.dead || o.金) continue;
           const dd = Math.abs(o.x - e.x) + Math.abs(o.y - (e.y - e.h/2));
           if (dd < bd){ bd = dd; orb = o; }
         }
@@ -2035,6 +2169,9 @@ function update(dt){
     spawnEnemy();
   }
 
+  /* ---- 大幽魂打完 → 开一次幽魂商店（19 级之后）---- */
+  if (P.商店待开 && state === 'play'){ P.商店待开 = 0; 开商店(); }
+
   /* ---- 镜头 ---- */
   cam = clamp(P.x - W/2, 0, WORLD - W);
 }
@@ -2428,7 +2565,7 @@ const HUD = {
   hp: $('hpFill'), hpT: $('hpTxt'), xp: $('xpFill'), xpBar: $('xpBar'), hud: $('hud'),
   gold: $('goldFill'), goldT: $('goldTxt'),
   lv: $('hLv'), perk: $('hPerk'), pol: $('hPol'), polx: $('hPolX'),
-  wave: $('hWave'), time: $('hTime'), ann: $('ann'), mainPk: $('hMainPk'),
+  wave: $('hWave'), time: $('hTime'), ann: $('ann'), mainPk: $('hMainPk'), soul: $('hSoul'),
 };
 function 设文(el, v){ if (el && el._v !== v){ el._v = v; el.textContent = v; } }
 function 设宽(el, r){
@@ -2469,7 +2606,13 @@ function syncHUD(){
   HUD.xpBar.classList.toggle('floor', (P.无升级秒 || 0) >= 60);
   const 主 = P.主词条 ? 按id找词条(P.主词条) : null;
   const 枪 = P.武器 ? 武器表[P.武器] : null;
-  设文(HUD.mainPk, (主 ? '主词条 · ' + 主.n : '') + (枪 ? '　🔫 ' + 枪.n : ''));
+  const 店主 = (P.商店主词条 || []).map(id => (按id找词条(id) || {}).n).filter(Boolean);
+  设文(HUD.mainPk, (主 ? '主词条 · ' + 主.n : '') + (枪 ? '　🔫 ' + 枪.n : '')
+                 + (店主.length ? '　⭐ ' + 店主.join('、') : ''));
+  const 魂 = [];
+  if (P.魂经验) 魂.push('魂经验 +' + Math.round(P.魂经验 * 100) + '%');
+  if (P.魂金币) 魂.push('魂金币 +' + Math.round(P.魂金币 * 100) + '%');
+  设文(HUD.soul, 魂.join('　'));
   HUD.mainPk.classList.toggle('hide', !主);
   HUD.hud.classList.toggle('hide', state === 'start');
 }
@@ -2692,7 +2835,8 @@ function loop(t){
 /* ============================ 输入 ============================ */
 addEventListener('keydown', e => {
   if (e.code === 'Escape'){
-    if (state === 'play') 暂停();
+    if (state === 'shop') 关商店();
+    else if (state === 'play') 暂停();
     else if (state === 'pause') 继续游戏();
     return;
   }
