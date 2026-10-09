@@ -234,10 +234,15 @@ let wave = 1, waveT = 0, timeAlive = 0;
 let cam = 0, spawnT = 0, shake = 0;
 let announce = 0;
 let enemies = [], projs = [], eprojs = [], orbs = [], parts = [], texts = [];
+function 玩家DPS(){
+  return (P.atk * P.projCount * (1 + P.crit * (P.critDmg - 1)) / P.atkInterval) || 10;
+}
 let pendingSpawns = [];
 let 特殊怪本波 = 0;      /* 每波重置：特殊怪上限 2 */
 let waves = [];          /* 首领的地面震荡波 */
 let rings = [];          /* 纯视觉的扩散圈 */
+let beams = [];          /* 子眼的竖直激光 */
+let 屏色 = '#000000', 屏力 = 0;   /* 全屏色调闪光 */
 let keys = {};
 
 /* ============================ 词条 ============================ */
@@ -424,6 +429,8 @@ const ET = {
   thief:{w:13,h:14,hp:22,atk:5,spd:34,xp:1.8,fly:false,ranged:false,c1:'#ffd94a',c2:'#a3781a'},
   split:{w:16,h:13,hp:30,atk:6,spd:17,xp:1.6,fly:false,ranged:false,c1:'#4ad8c8',c2:'#1f7a72'},
   mirror:{w:10,h:18,hp:40,atk:11,spd:34,xp:3.5,fly:false,ranged:false,c1:'#b03a5a',c2:'#2c3557'},
+  wuxiang:{w:16,h:24,hp:70,atk:15,spd:30,xp:9,fly:false,ranged:false,c1:'#241a2e',c2:'#0d0812'},
+  eye:{w:9,h:9,hp:26,atk:9,spd:0,xp:1.2,fly:true,ranged:true,c1:'#c77dff',c2:'#4a2a6a'},
 };
 function pickType(){
   const o = ['slime','slime'];
@@ -469,6 +476,8 @@ function reset(){
   特殊怪本波 = 0;
   waves = [];
   rings = [];
+  beams = [];
+  屏力 = 0;
   wave = 1; waveT = 0; timeAlive = 0; pendingPerks = 0;
   shake = 0; spawnT = 0.5; announce = 0;
   cam = clamp(P.x - W/2, 0, WORLD - W);
@@ -547,8 +556,9 @@ function addXp(v){
    否则一次性升多级时，后面的特殊界面会被普通词条面板顶掉。   */
 function 推进选择(){
   if (state === 'dead' || state === 'start' || state === 'pause') return;
-  if (!P.主词条 && P.level >= 9){  开主词条选择(); return; }
-  if (!P.武器   && P.level >= 19){ 开武器选择();   return; }
+  /* 候选为空时直接跳过，否则会弹出一个没有卡片的界面卡死 */
+  if (!P.主词条 && P.level >= 9 && 主词条候选().length > 0){ 开主词条选择(); return; }
+  if (!P.武器 && P.level >= 19 && (武器伙伴[P.主词条] || []).length > 0){ 开武器选择(); return; }
   if (!P.已选唯一 && P.level >= 30){ 开唯一选择(); return; }
   if (pendingPerks > 0) openPerk();
   else state = 'play';
@@ -716,6 +726,19 @@ function takePerk(o){
 
 /* ============================ 伤害 ============================ */
 function hurtEnemy(e, d, isCrit){
+  /* 「壳」形态的护盾：盾没破之前，本体一滴血都不掉 */
+  if (e.盾 > 0){
+    e.盾 -= d;  P.dmgDealt += d;  e.hitT = 0.09;
+    addText(e.x + rand(-4,4), e.y - e.h - 30, Math.round(d) + '', '#7fd4ff');
+    if (e.盾 <= 0){
+      e.hp += e.盾;  e.盾 = 0;                    /* 溢出的伤害打到血上 */
+      addText(e.x, e.y - e.h - 40, '护盾破碎！', '#ffffff');
+      addParts(e.x, e.y - e.h/2, '#7fd4ff', 34, 200);
+      shake = Math.max(shake, 7);  屏色 = '#7fd4ff'; 屏力 = 0.35;
+      if (e.hp <= 0) killEnemy(e);
+    }
+    return;
+  }
   e.hp -= d;
   P.dmgDealt += d;
   e.hitT = 0.09;
@@ -742,6 +765,30 @@ function hurtEnemy(e, d, isCrit){
 }
 function killEnemy(e){
   if (e.dead) return;
+
+  /* ══ 无相：每掉一条命换一个形态，三次转场打完才真死 ══ */
+  if (e.type === 'wuxiang' && e.lives > 1){
+    e.lives--;
+    e.形 = (e.形 + 1) % 3;
+    e.hp = e.maxHp;
+    e.盾 = 0;
+    e.连冲 = 0;  e.蓄 = 0;
+    e.转场 = 1.3;
+    e.charging = 0;  e.wind = 0;
+    e.残影.length = 0;
+    shake = 12;
+    屏色 = ['#ff5566', '#7fd4ff', '#c77dff'][e.形];  屏力 = 0.75;
+    /* 转场冲击波：把玩家推开，给个喘息 */
+    for (const wv of [1, -1])
+      waves.push({x: e.x, dir: wv, spd: 300, life: 2.2, dmg: e.atk * 0.6, hit: false, dead: false});
+    for (let i = 0; i < 46; i++)
+      parts.push({x: e.x, y: e.y - e.h/2, vx: rand(-260,260), vy: rand(-260,260),
+        life: rand(0.4,0.9), max: 0.9, color: ['#ff5566','#7fd4ff','#c77dff'][e.形], s: 2});
+    rings.push({x: e.x, y: GROUND, r: 6, max: 150, life: 0.6, all: 0.6, color: '#ffffff'});
+    addText(e.x, e.y - e.h - 20, ['形态·刃', '形态·壳', '形态·眼'][e.形], '#ffffff');
+    播报(['无相 · 转生为「刃」', '无相 · 转生为「壳」', '无相 · 转生为「眼」'][e.形]);
+    return;
+  }
 
   /* 还有「命」就当场复活 */
   if (e.lives > 0){
@@ -837,13 +884,9 @@ function spawnEnemy(type, opts){
 
   const w  = Math.max(6, Math.round(d.w * sizeMul));
   const h  = Math.max(6, Math.round(d.h * sizeMul));
-  /* 首领的血量按玩家当前 DPS 来定 —— 保证它一定会被打死，
-     不会像以前那样从第 20 波拖到第 30 波 */
-  const 玩家DPS = (P.atk * P.projCount * (1 + P.crit * (P.critDmg - 1))
-                   / P.atkInterval) || 10;
-  /* 镜像有 10 条命，单条血量按玩家的 4 秒输出算就够 */
+  /* 首领的血量按玩家当前 DPS 来定 —— 保证它一定会被打死，不会拖到下一波 */
   const hp = opts.boss
-      ? Math.max(300, Math.round(玩家DPS * (t === 'mirror' ? 4 : 12)))
+      ? Math.max(300, Math.round(玩家DPS() * (t === 'mirror' ? 4 : (t === 'wuxiang' ? 7 : 12))))
       : Math.max(1, Math.round(d.hp * hpS * hpMul));
 
   enemies.push({
@@ -863,6 +906,8 @@ function spawnEnemy(type, opts){
     cd2: rand(1.5, 9.5), wind: 0, charging: 0, chargeDir: 1, frozen: 0, orbHit: 0,
     freezeCd: 0, poisonTick: 0.2,
     act: -1, actCd: 1.2, aoe: 0,
+    形: 0, 形时: 0, 盾: 0, 盾max: 0, 连冲: 0, 蓄: 0, 转场: 0, 残影: [], 子眼计时: 3,
+    寿命: t === 'eye' ? 13 : 0,
   });
 }
 
@@ -882,6 +927,7 @@ function update(dt){
   timeAlive += dt;
   P.atk = (P.基攻 || 7) * (1 + (P.atkPct || 0));
   if (shake > 0) shake = Math.max(0, shake - dt * 14);
+  if (屏力 > 0) 屏力 = Math.max(0, 屏力 - dt * 1.5);
   if (announce > 0) announce -= dt;
 
   /* ---- 玩家 ---- */
@@ -1199,6 +1245,7 @@ function update(dt){
 
     const dx = P.x - e.x, dist = Math.abs(dx);
     let sp = e.spd * (e.slowT > 0 ? (1 - Math.max(P.frost, e.slowVal || 0)) : 1);
+    if (e.盾 > 0) sp *= 0.55;
     e.face = dx > 0 ? 1 : -1;
 
     let dir = 0;
@@ -1253,9 +1300,98 @@ function update(dt){
       const target = P.x + e.off;
       if (Math.abs(target - e.x) > 2) dir = Math.sign(target - e.x);
     }
+    /* ══════ 无相：三形态行为 ══════ */
+    if (e.type === 'wuxiang'){
+      e.形时 += dt;
+      /* 残影链 */
+      e.残影.push({x: e.x, y: e.y, t: timeAlive});
+      while (e.残影.length && timeAlive - e.残影[0].t > 0.30) e.残影.shift();
+
+      if (e.转场 > 0){                       /* 转场：无敌、定身 */
+        e.转场 -= dt;
+        dir = 0; sp = 0;
+        if (Math.random() < dt * 40)
+          addParts(e.x + rand(-16,16), e.y - e.h/2 + rand(-16,16), '#ffffff', 2, 120);
+      } else if (e.形 === 0){
+        /* ── 刃：三段连冲 ── */
+        if (e.charging > 0){
+          e.charging -= dt;
+          dir = e.chargeDir; sp = 330;
+          if (Math.random() < dt * 30) addParts(e.x, e.y - e.h/2, '#ff2233', 3, 90);
+        } else if (e.wind > 0){
+          e.wind -= dt; dir = 0; sp = 0;
+          if (e.wind <= 0){
+            e.charging = 0.32; e.chargeDir = Math.sign(P.x - e.x) || 1;
+            e.连冲++;
+            if (e.连冲 < 3) e.wind = 0.22;      /* 立刻接下一段 */
+            else {                                   /* 三段打完 → 爆发弹幕 */
+              e.连冲 = 0; e.蓄 = 0.9;
+              for (let k = 0; k < 10; k++){
+                const a = (k / 10) * Math.PI * 2;
+                eprojs.push({x: e.x, y: e.y - e.h/2, vx: Math.cos(a)*135, vy: Math.sin(a)*135,
+                  dmg: e.atk*0.55, life: 3.5, dead: false, spin: (k % 2 ? 2.2 : -2.2)});
+              }
+              屏色 = '#ff2233'; 屏力 = 0.28;  shake = Math.max(shake, 6);
+            }
+          }
+        } else {
+          e.蓄 -= dt;
+          dir = Math.sign(P.x - e.x) || 1; sp = 0;
+          if (e.蓄 <= 0) e.wind = 0.45;             /* 起手蓄力预警 */
+        }
+      } else if (e.形 === 1){
+        /* ── 壳：护盾 + 追踪弹 ── */
+        e.fly = 0;
+        if (e.盾max === 0){ e.盾max = Math.round(玩家DPS() * 5); e.盾 = e.盾max; }
+        const th = P.x + e.off;
+        dir = Math.abs(th - e.x) > 4 ? Math.sign(th - e.x) : 0;
+        sp *= 0.55;
+        e.cd -= dt;
+        if (e.cd <= 0 && e.盾 > 0){
+          e.cd = 1.9;
+          for (let k = -1; k <= 1; k++){
+            const a = Math.atan2((P.y - 9) - (e.y - e.h/2), P.x - e.x) + k * 0.30;
+            eprojs.push({x: e.x, y: e.y - e.h/2, vx: Math.cos(a)*120, vy: Math.sin(a)*120,
+              dmg: e.atk*0.42, life: 4.5, dead: false, homing: 1.7});
+          }
+        }
+      } else {
+        /* ── 眼：浮空 + 旋转弹幕 + 召唤子眼 ── */
+        e.fly = 1;
+        e.bob += dt * 2;
+        e.y = GROUND - 66 + Math.sin(e.bob) * 7;
+        dir = 0; sp = 0;
+        e.cd -= dt;
+        if (e.cd <= 0){
+          e.cd = 1.6;
+          const 基 = timeAlive * 0.9;
+          for (let k = 0; k < 24; k++){
+            const a = 基 + (k / 24) * Math.PI * 2;
+            eprojs.push({x: e.x, y: e.y - e.h/2, vx: Math.cos(a)*112, vy: Math.sin(a)*112,
+              dmg: e.atk*0.34, life: 4.5, dead: false, spin: 1.1});
+          }
+          屏色 = '#c77dff'; 屏力 = 0.16;
+        }
+        e.子眼计时 -= dt;
+        if (e.子眼计时 <= 0){
+          e.子眼计时 = 7;
+          let 现存 = 0;
+          for (const o of enemies) if (o.type === 'eye' && !o.dead) 现存++;
+          if (现存 < 4){                      /* 同时最多 4 只，否则会堆到几百个 */
+            for (let k = -1; k <= 1; k++){
+              pendingSpawns.push({type: 'eye', opts: {
+                x: e.x + k * 46, noElite: true, size: 1, hpMul: 0.5, xpMul: 0.6}});
+            }
+            addText(e.x, e.y - e.h - 22, '召唤子眼', '#c77dff');
+          }
+        }
+      }
+    }
+
     /* ---- 冲锋：平时几乎赖着不动，每 10 秒扑一次（伤害 ×2）---- */
+    const 无相 = (e.type === 'wuxiang');
     if (e.frozen > 0) e.frozen -= dt;
-    if (e.wind > 0){
+    if (!无相 && e.wind > 0){
       e.wind -= dt;
       if (e.wind <= 0){ e.charging = 0.55; e.chargeDir = Math.sign(dx) || 1; }
     }
@@ -1269,7 +1405,7 @@ function update(dt){
       sp *= (e.type === 'thief' ? 0.85 : 0.16);    /* 平时慢悠悠地挪 */
       /* 只有软体怪会冲撞：史莱姆 / 分裂体。
          骷髅、盗贼、壮汉、首领都不冲 —— 不然前期太难受 */
-      if (!e.boss && (e.type === 'slime' || e.type === 'split')){
+      if (!e.boss && !无相 && (e.type === 'slime' || e.type === 'split')){
         e.cd2 -= dt;
         if (e.cd2 <= 0 && dist < 320){
           e.cd2 = 10 + rand(-1.5, 1.5);
@@ -1286,7 +1422,25 @@ function update(dt){
       e.y = GROUND - 36 + Math.sin(e.bob) * 9;
     }
 
-    if (e.ranged){
+    /* 子眼：悬停不动，定期放一道竖直激光 */
+    if (e.type === 'eye'){
+      /* 子眼有寿命，到点自己消散（否则场上会堆到几百个）*/
+      e.寿命 -= dt;
+      if (e.寿命 <= 0){
+        e.dead = true;
+        addParts(e.x, e.y - e.h/2, '#c77dff', 10, 90);
+        continue;
+      }
+      e.fly = 1;
+      e.bob += dt * 3;
+      e.y = GROUND - 46 + Math.sin(e.bob) * 10;
+      dir = 0; sp = 0;
+      e.cd -= dt;
+      if (e.cd <= 0 && e.frozen <= 0){
+        e.cd = 3.2;
+        beams.push({x: e.x, w: 11, t: 0.55, t2: 0, dmg: e.atk * 1.1, dead: false});
+      }
+    } else if (e.ranged){
       e.cd -= dt;
       if (e.cd <= 0 && dist < 210 && e.frozen <= 0){
         e.cd = rand(1.8, 2.6);
@@ -1334,7 +1488,7 @@ function update(dt){
     }
 
     /* 首领大招：烧掉自己一条命，放一圈弹幕 + 左右地面震荡波（跳起来才能躲）*/
-    if (e.boss && e.type !== 'mirror'){
+    if (e.boss && e.type !== 'mirror' && e.type !== 'wuxiang'){
       if (e.ult > 0){
         e.ult -= dt;
         if (Math.random() < dt * 26) addParts(e.x, e.y - e.h/2, '#ffd94a', 3, 130);
@@ -1376,6 +1530,20 @@ function update(dt){
   /* ---- 敌人弹幕 ---- */
   const 新弹 = [];
   for (const p of eprojs){
+    if (p.spin){                                   /* 旋转弹幕：整圈缓慢自转 */
+      const 速 = Math.hypot(p.vx, p.vy), 角 = Math.atan2(p.vy, p.vx) + p.spin * dt;
+      p.vx = Math.cos(角) * 速; p.vy = Math.sin(角) * 速;
+    }
+    if (p.homing){                                 /* 追踪弹：缓慢转向玩家 */
+      const 速 = Math.hypot(p.vx, p.vy);
+      let 角 = Math.atan2(p.vy, p.vx);
+      const 目标 = Math.atan2((P.y - 9) - p.y, P.x - p.x);
+      let 差 = 目标 - 角;
+      while (差 > Math.PI) 差 -= Math.PI * 2;
+      while (差 < -Math.PI) 差 += Math.PI * 2;
+      角 += Math.max(-p.homing * dt, Math.min(p.homing * dt, 差));
+      p.vx = Math.cos(角) * 速; p.vy = Math.sin(角) * 速;
+    }
     p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
     if (p.life <= 0){ p.dead = true; continue; }
     if (p.x < cam-40 || p.x > cam+W+40 || p.y < -20 || p.y > H+20){ p.dead = true; continue; }
@@ -1412,6 +1580,16 @@ function update(dt){
     if (wv.life <= 0 || wv.x < cam - 90 || wv.x > cam + W + 90) wv.dead = true;
   }
   waves = waves.filter(wv => !wv.dead);
+
+  for (const b of beams){
+    if (b.t > 0){ b.t -= dt; if (b.t <= 0) b.t2 = 0.38; }
+    else if (b.t2 > 0){
+      if (!b.已伤 && Math.abs(P.x - b.x) < b.w/2 + 5){ b.已伤 = 1; damagePlayer(b.dmg); }
+      b.t2 -= dt;
+      if (b.t2 <= 0) b.dead = true;
+    }
+  }
+  beams = beams.filter(b => !b.dead);
 
   for (const rg of rings){ rg.life -= dt; rg.r = rg.max * (1 - rg.life / rg.all); }
   rings = rings.filter(rg => rg.life > 0);
@@ -1477,8 +1655,9 @@ function update(dt){
       }
       /* 50 级以后，首领换成「镜像」——10 条命，每 2 秒烧一条命出一次招 */
       if (P.level >= 50){
-        spawnEnemy('mirror', {boss: true, lives: 10, noElite: true});
-        播报('镜像降临 · 10 条命 · 每 2 秒烧命出招');
+        spawnEnemy('wuxiang', {boss: true, lives: 3, noElite: true});
+        屏色 = '#c77dff'; 屏力 = 0.85;  shake = 10;
+        播报('无相降临 · 刃 / 壳 / 眼 三形态');
       } else {
         spawnEnemy('thief', {boss: true, lives: 2 + Math.floor(wave/10), noElite: true});
       }
@@ -1591,10 +1770,90 @@ function drawOrbs(){
     px(ox - 1, oy - 1, 2, 2, '#ffffff');
   }
 }
+/* 无相的残影链：越旧的越淡 */
+function draw残影(e){
+  if (!e.残影 || !e.残影.length) return;
+  const 色 = ['#ff2233', '#7fd4ff', '#c77dff'][e.形] || '#ffffff';
+  for (let i = 0; i < e.残影.length; i++){
+    const r = e.残影[i], a = (i / e.残影.length) * 0.4;
+    ctx.globalAlpha = a;
+    px(r.x - 5, GROUND - 1, 10, 2, 色);
+    px(r.x - 8, r.y - e.h, 16, e.h, 色);
+    ctx.globalAlpha = 1;
+  }
+}
 function drawEnemy(e){
   const x = Math.round(e.x), y = Math.round(e.y);
   const l = Math.round(x - e.w/2), h = e.h;
   px(x - e.w/2, GROUND - 1, e.w, 2, 'rgba(0,0,0,.28)');
+  /* ══ 无相：三形态外形 ══ */
+  if (e.type === 'wuxiang'){
+    draw残影(e);
+    const k = e.h / 24, 闪 = e.转场 > 0 && Math.floor(timeAlive * 24) % 2;
+    const 主 = 闪 ? '#ffffff' : ['#3a1020', '#0e2438', '#241033'][e.形];
+    const 亮 = ['#ff2233', '#7fd4ff', '#c77dff'][e.形];
+    /* 斗篷 */
+    px(x - 8*k, y - e.h, 16*k, e.h, 主);
+    px(x - 10*k, y - e.h*0.62, 20*k, e.h*0.62, 主);
+    /* 兜帽 */
+    px(x - 6*k, y - e.h - 5*k, 12*k, 6*k, 主);
+    /* 核心：随形态变色，会呼吸 */
+    const 呼 = 0.6 + 0.4 * Math.sin(timeAlive * 6);
+    ctx.globalAlpha = 呼;
+    px(x - 3*k, y - e.h*0.66, 6*k, 6*k, 亮);
+    px(x - 1.5*k, y - e.h*0.66 + 1.5*k, 3*k, 3*k, '#ffffff');
+    ctx.globalAlpha = 1;
+    /* 壳形态：六边形护盾环 */
+    if (e.盾 > 0){
+      const 比 = e.盾max ? e.盾 / e.盾max : 0;
+      ctx.globalAlpha = 0.25 + 0.35 * 比;
+      for (let i = 0; i < 6; i++){
+        const a = timeAlive * 0.8 + i * Math.PI / 3;
+        px(x + Math.cos(a) * 26 - 3, (y - e.h/2) + Math.sin(a) * 26 - 3, 6, 6, '#7fd4ff');
+      }
+      ctx.globalAlpha = 0.20 * 比;
+      px(x - 30, y - e.h/2 - 30, 60, 60, '#7fd4ff');
+      ctx.globalAlpha = 1;
+    }
+    /* 眼形态：紫色光环 */
+    if (e.形 === 2){
+      ctx.globalAlpha = 0.22 + 0.12 * Math.sin(timeAlive * 5);
+      px(x - 26, y - e.h/2 - 26, 52, 52, '#c77dff');
+      ctx.globalAlpha = 1;
+    }
+    /* 蓄力预警 */
+    if (e.wind > 0){
+      ctx.globalAlpha = Math.floor(timeAlive * 22) % 2 ? 0.85 : 0.3;
+      px(x - 8*k, y - e.h, 16*k, e.h, '#ff2233');
+      ctx.globalAlpha = 1;
+      px(x, y - e.h/2 - 1, (Math.sign(P.x - e.x) || 1) * 150, 2, 'rgba(255,60,60,.6)');
+    }
+    /* 头衔 */
+    ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
+    ctx.fillStyle = 亮;
+    ctx.fillText(['刃', '壳', '眼'][e.形] + '　命 ' + e.lives, x, y - e.h - 12);
+    ctx.textAlign = 'left';
+    /* 血条 */
+    const bw = 46;
+    px(x - bw/2, y - e.h - 9, bw, 3, 'rgba(0,0,0,.7)');
+    px(x - bw/2, y - e.h - 9, Math.max(0, bw * clamp(e.hp/e.maxHp,0,1)), 3, '#ff5566');
+    if (e.盾 > 0){
+      px(x - bw/2, y - e.h - 13, bw, 3, 'rgba(0,0,0,.7)');
+      px(x - bw/2, y - e.h - 13, bw * clamp(e.盾/e.盾max,0,1), 3, '#7fd4ff');
+    }
+    return;
+  }
+  /* 子眼 */
+  if (e.type === 'eye'){
+    const 呼 = 0.55 + 0.45 * Math.sin(timeAlive * 8);
+    ctx.globalAlpha = 0.35; px(x - 9, y - e.h/2 - 9, 18, 18, '#4a2a6a'); ctx.globalAlpha = 1;
+    px(x - 5, y - e.h/2 - 5, 10, 10, e.c2);
+    px(x - 3.5, y - e.h/2 - 3.5, 7, 7, e.c1);
+    ctx.globalAlpha = 呼;
+    px(x - 1.5, y - e.h/2 - 2.5, 4, 4, '#ffffff');
+    ctx.globalAlpha = 1;
+    return;
+  }
   /* 镜像首领：用和玩家一样的模型 */
   if (e.type === 'mirror'){
     const k = e.h / 18, f = e.face;
@@ -1751,6 +2010,20 @@ function render(){
     px(o.x - 2, o.y - 2, 4, 4, '#1b6f9e');
     px(o.x - 1, o.y - 1, 2, 2, '#9fe8ff');
   }
+  for (const b of beams){
+    if (b.t > 0){                                  /* 预警：细红线 */
+      ctx.globalAlpha = 0.45 + 0.4 * Math.sin(timeAlive * 40);
+      px(b.x - 1, 0, 2, GROUND, '#ff3355');
+      px(b.x - b.w/2, GROUND - 4, b.w, 4, '#ff3355');
+    } else {                                        /* 激光：粗紫柱 + 白芯 */
+      ctx.globalAlpha = 0.85;
+      px(b.x - b.w/2, 0, b.w, GROUND, '#c77dff');
+      ctx.globalAlpha = 1;
+      px(b.x - 2, 0, 4, GROUND, '#ffffff');
+      px(b.x - b.w/2 - 2, GROUND - 6, b.w + 4, 6, '#c77dff');
+    }
+    ctx.globalAlpha = 1;
+  }
   for (const rg of rings){
     ctx.globalAlpha = clamp(rg.life / rg.all, 0, 1) * 0.85;
     ctx.strokeStyle = rg.color; ctx.lineWidth = 2;
@@ -1792,6 +2065,12 @@ function render(){
   ctx.restore();
   syncHUD();
   ctx.restore();
+  if (屏力 > 0){
+    ctx.globalAlpha = Math.min(0.6, 屏力);
+    ctx.fillStyle = 屏色;
+    ctx.fillRect(-10, -10, W + 20, H + 20);
+    ctx.globalAlpha = 1;
+  }
 }
 
 /* ============================ 主循环 ============================ */
