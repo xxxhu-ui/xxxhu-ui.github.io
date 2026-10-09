@@ -204,12 +204,13 @@
   <div class="sub" style="margin-top:2px;font-size:12px;line-height:1.85">
     <b style="color:#ffe066">金色描边</b> = 精英怪（血厚、经验 ×3）<br>
     <b style="color:#ff5566">头顶红点</b> = 那个怪还剩几条命<br>
-    <b style="color:#c77dff">污染值</b> = 每 10 级 +1，怪的基础数值 ×1.25（指数叠加）<br>
+    <b style="color:#c77dff">污染值</b> = 每 10 级 +1，怪的基础数值 ×1.25，同时白送你 <b>攻击力百分比 +50%</b><br>
     <b style="color:#c77dff">污染值</b> 每 +1，怪死后多 10% 概率留下「幽魂」；幽魂超过 5 只 → 聚合成<b>大幽魂</b><br>
     「幽魂」悬停时<b>无形</b>（打不到），俯冲落地后有 1 秒<b>破绽</b>（伤害翻倍）<br>
     每产出 18 只幽魂 → 全部湮灭，聚合成 3 条命的<b>大幽魂</b>（唯一；至少隔 3 波才会再来一只）<br>
     打死大幽魂有<b>奖励</b>：50% 让所有怪经验 +50%，50% 让所有怪金币 +75%（都能叠加）<br>
     19 级之后，每打死一只大幽魂会开一次<b>幽魂商店</b>，花金币买词条<br>
+    <b style="color:#7fd4ff">迅捷</b> 做主词条 = 二段跳；再抽到 <b>迅捷·续</b> 就能在二段跳落地时砸一圈（范围和天崩地裂一样）<br>
     <b style="color:#ffd94a">金币</b> = 怪死后掉的金色圆片，商店里花（19 级后每打死一只大幽魂开一次）<br>
     右上角一直显示<b>算完的最终属性</b>：攻击 / 弹数 / 攻速 / 暴击 / 暴伤 / DPS / 射程 / 复活次数<br>
     <b style="color:#ffd94a">黄帽窃贼</b> = 抢你经验球，抢满 5 秒就换一条命
@@ -326,8 +327,8 @@ const PERKS = [
 
 /* ══════════ 主词条解锁的「进阶词条」（k:1 = 卡面是青色，50% 概率出现）══════════ */
 const UNLOCK = [
-  {id:'atkpct', n:'攻击力百分比', k:1, max:30,
-   d:'最终攻击力 = 基础攻击力 × (1 + 10%)  最多堆到 300%',
+  {id:'atkpct', n:'攻击力百分比', k:1, max:20,
+   d:'最终攻击力 = 基础攻击力 × (1 + 10%)　最多堆到 200%　※污染值每级另外白送 +50%',
    f:()=>P.atkPct = (P.atkPct || 0) + 0.10},
   {id:'aspd2',  n:'疾风·续', k:1, max:6, d:'攻击速度 +16%（把疾风砍掉的那一半补回来）',
    f:()=>P.atkInterval *= 0.862},
@@ -352,11 +353,15 @@ const UNLOCK = [
   {id:'ice',    n:'寒冰', k:1, max:6,
    d:'每 10 秒降下一颗寒冰，冻住最近的怪 10 秒；每层 CD −1 秒（最少 5 秒）',
    f:()=>P.ice = (P.ice || 0) + 1},
+  {id:'jumpaoe', n:'迅捷·续', k:1, max:8,
+   d:'「二段跳」之后落地时砸出冲击波：范围与「天崩地裂」完全相同，'
+   + '伤害 = 攻击力 ×150%，每层 +30%（最高 360%）；可以和「天崩地裂」同时触发',
+   f:()=>{ P.跳跃AOE = (P.跳跃AOE || 0) + 1; P.二段跳 = 1; }},
 ];
 const 解锁表 = {
   atk:['atkpct'], aspd:['aspd2'], crit:['critsplit'], cdmg:['snipe'],
   hp:['hpup'], ls:['execute'], proj:['splitp'], poison:['bianque'], frost:['ice'],
-  move:[], range:[], xp:[], regen:[],
+  move:['jumpaoe'], range:[], xp:[], regen:[],
 };
 /* 主词条本身的效果（不是可选词条的那种）*/
 function 应用主词条(id){
@@ -549,7 +554,7 @@ function reset(){
     双向: 0, 震地: 0, 回响: 0, 卫球: 0, 背水: 0, 连锁: 0,
     基攻: 7, atkPct: 0, 主词条: null, 主卡池: [], 已删词条: [], 已选唯一: null,
     选序: [], 复活次数: 0, 二段跳: 0, 跳数: 0, 贯穿: 0, 金币: 0,
-    魂经验: 0, 魂金币: 0, 商店待开: 0, 商店主词条: [],
+    魂经验: 0, 魂金币: 0, 商店待开: 0, 商店主词条: [], 跳跃AOE: 0,
     hpup: 0, snipeCd: 0, execCd: 0, bianCd: 0, iceCd: 0, critSplit: 0, splitp: 0,
     snipe: 0, execute: 0, bianque: 0, ice: 0, 跳锁: 0,
     武器: null, 武器Cd: 0, 主词条2: null, 连击目标: null, 连击层: 0,
@@ -586,9 +591,12 @@ function addText(x, y, s, color){
   texts.push({x, y, s, color, life: 0.75});
 }
 
-/* 天崩地裂：落地时对自己周围一圈造成攻击力 ×3 的伤害 */
-function 震地波(){
-  const R0 = 86, dmg = P.atk * 3;
+/* ══════════ 落地冲击波 ══════════
+   「天崩地裂」（唯一词条）和「迅捷·续」共用同一套：
+   范围一模一样（R0 = 86），只有伤害和配色不同。
+   两个可以同时触发 —— 落地那一下会打出两段独立伤害。*/
+function 冲击波(dmg, 色1, 色2, 震度){
+  const R0 = 86;
   for (const e of enemies){
     if (e.dead) continue;
     if (Math.abs(e.x - P.x) < R0 + e.w/2 &&
@@ -600,10 +608,18 @@ function 震地波(){
   for (let i = 0; i < 26; i++){
     parts.push({x: P.x + rand(-R0, R0), y: GROUND - rand(0, 12),
       vx: rand(-50, 50), vy: rand(-150, -40), life: rand(0.3, 0.7), max: 0.7,
-      color: i % 2 ? '#ffd94a' : '#ff8a4c', s: 2});
+      color: i % 2 ? 色1 : 色2, s: 2});
   }
-  rings.push({x: P.x, y: GROUND, r: 6, max: R0, life: 0.45, all: 0.45, color: '#ffd94a'});
-  shake = Math.max(shake, 6);
+  rings.push({x: P.x, y: GROUND, r: 6, max: R0, life: 0.45, all: 0.45, color: 色1});
+  shake = Math.max(shake, 震度);
+}
+/* 天崩地裂：攻击力 ×3 */
+function 震地波(){ 冲击波(P.atk * 3, '#ffd94a', '#ff8a4c', 6); }
+/* 迅捷·续：二段跳之后落地，攻击力 ×(150% + 30%×额外层数)，最高 360% */
+function 跳砸倍率(){ return Math.min(3.6, 1.5 + 0.3 * (Math.max(1, P.跳跃AOE || 1) - 1)); }
+function 跳砸波(){
+  冲击波(P.atk * 跳砸倍率(), '#7fd4ff', '#cfefff', 7);
+  addText(P.x, P.y - 46, '二段跳 · 砸地 ' + Math.round(跳砸倍率() * 100) + '%', '#7fd4ff');
 }
 
 /* ============================ 经验 / 升级 ============================ */
@@ -628,7 +644,8 @@ function addXp(v){
   if (pol > (P.污染 || 0)){
     P.污染 = pol;
     P.hp = P.maxHp;
-    播报('污染值 ' + P.污染 + '　怪的基础数值 ×' + Math.pow(1.25, P.污染).toFixed(2));
+    播报('污染值 ' + P.污染 + '　怪的基础数值 ×' + Math.pow(1.25, P.污染).toFixed(2)
+        + '　你的攻击力 +' + (P.污染 * 50) + '%');
     shake = 5;
     addParts(P.x, P.y - 9, '#c77dff', 30, 180);
   }
@@ -659,10 +676,12 @@ function 开主词条选择(){
     const o = 按id找词条(c.id);
     if (!o) return;
     const 池 = 解锁表[c.id] || [];
-    const 解锁说明 = 池.length
-      ? '解锁：' + 池.map(x => (按id找词条(x) || {}).n).join('、')
-      : (c.id === 'move'  ? '解锁：二段跳'
-       : c.id === 'range' ? '解锁：子弹贯穿'
+    const 解锁说明 =
+        (c.id === 'move')
+        ? '解锁：二段跳 ＋ ' + 池.map(x => (按id找词条(x) || {}).n).join('、')
+      : 池.length
+        ? '解锁：' + 池.map(x => (按id找词条(x) || {}).n).join('、')
+      : (c.id === 'range' ? '解锁：子弹贯穿'
        : c.id === 'xp'    ? '解锁：经验获取 +300%，并删除「贪婪」'
        : c.id === 'hp'    ? '删除「铁壁」，不会再被抽到'
        : '（没有新词条）');
@@ -1379,8 +1398,13 @@ function 幽魂结算(){
    ⚠ 以前这句只写在 update() 里 —— 而词条选择界面开着时 update() 是不跑的，
    于是右上角面板一直显示旧值：点锋锐时那个攻击力纹丝不动，
    要等所有词条选完回到游戏才「跳一下」。现在抽成函数，面板每帧都刷新。*/
+/* 污染值每 +1，白送 +50% 攻击力百分比。
+   为什么要有这个：怪的血量按 1.25^污染 往上涨，如果玩家的攻击力一点都不涨，
+   那只要主词条不是攻击系（甚至只是没抽到「攻击力百分比」），后期就完全打不动。*/
+function 污染攻击加成(){ return (P.污染 || 0) * 0.5; }
+function 攻击倍率(){ return 1 + (P.atkPct || 0) + 污染攻击加成(); }
 function 刷新攻击(){
-  P.atk = (P.基攻 || 7) * (1 + (P.atkPct || 0));
+  P.atk = (P.基攻 || 7) * 攻击倍率();
   return P.atk;
 }
 
@@ -1420,8 +1444,12 @@ function update(dt){
   P.y  += P.vy * dt;
   if (P.y >= GROUND){
     const 刚落地 = !P.onGround;
+    const 用过二段跳 = P.跳数 >= 2;        /* 得在清零之前记下来 */
     P.y = GROUND; P.vy = 0; P.onGround = true; P.跳数 = 0; P.跳锁 = 0;
-    if (刚落地 && P.震地 && state === 'play') 震地波();
+    if (刚落地 && state === 'play'){
+      if (P.震地) 震地波();
+      if (P.跳跃AOE && 用过二段跳) 跳砸波();   /* 两者可以同时触发 */
+    }
     if (刚落地){
       if (特效) for (let i = 0; i < 6; i++)
         parts.push({x: P.x + rand(-7, 7), y: GROUND - 1,
@@ -2640,7 +2668,8 @@ function syncHUD(){
   设文(HUD.perk, '词条 ' + perkCount());
   const pn = P.污染 || 0;
   设文(HUD.pol, '污染 ' + pn);
-  设文(HUD.polx, '怪 ×' + Math.pow(1.25, pn).toFixed(2));
+  设文(HUD.polx, '怪 ×' + Math.pow(1.25, pn).toFixed(2)
+                + (pn ? '　攻 +' + (pn * 50) + '%' : ''));
   HUD.pol.classList.toggle('on', pn > 0);
   HUD.polx.classList.toggle('on', pn > 0);
   设文(HUD.wave, '第 ' + wave + ' 波');
@@ -2662,8 +2691,8 @@ function syncHUD(){
      DPS  = 攻击 × 弹数 × 暴击期望 ÷ 攻速（和首领血量用的是同一个公式）*/
   设文(HUD.stAtk,   Math.round(P.atk));
   /* 有攻击力百分比时，把「基础 × 倍率」摊开显示，一眼能看出锋锐被放大了多少 */
-  设文(HUD.stAtkBase, P.atkPct > 0.001
-        ? (Math.round(P.基攻) + '×' + (1 + P.atkPct).toFixed(2))
+  设文(HUD.stAtkBase, 攻击倍率() > 1.001
+        ? (Math.round(P.基攻) + '×' + 攻击倍率().toFixed(2))
         : '');
   设文(HUD.stProj,  '×' + P.projCount);
   设文(HUD.stAspd,  (1 / P.atkInterval).toFixed(1) + '/s');
