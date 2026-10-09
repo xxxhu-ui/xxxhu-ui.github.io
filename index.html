@@ -31,6 +31,11 @@
   .card .n{display:block;font-size:18px;font-weight:bold;color:#ffe066;letter-spacing:2px}
   .card .d{display:block;font-size:14px;color:#9fb0dd;margin-top:5px}
   .card .s{display:block;font-size:12px;color:#5f7099;margin-top:4px}
+  .card.uni{border-color:#ffe066;background:#251f0e;
+    box-shadow:0 0 14px rgba(255,224,102,.35)}
+  .card.uni .n{color:#ffd94a}
+  .card .tag{font-style:normal;font-size:11px;margin-left:8px;padding:1px 7px;
+    border-radius:8px;background:#ffd94a;color:#231c00;vertical-align:2px}
   #dStats{font-size:15px;line-height:2.1;color:#b9c6ea;text-align:center;margin:12px 0 18px}
   #dStats b{color:#ffe066;font-size:18px}
   #pad{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:space-between;
@@ -217,34 +222,58 @@ let enemies = [], projs = [], eprojs = [], orbs = [], parts = [], texts = [];
 let pendingSpawns = [];
 let 特殊怪本波 = 0;      /* 每波重置：特殊怪上限 2 */
 let waves = [];          /* 首领的地面震荡波 */
+let rings = [];          /* 纯视觉的扩散圈 */
 let keys = {};
 
 /* ============================ 词条 ============================ */
+/* 只有 锋锐 / 锐眼 / 致命 是纯数值且无上限，其余全部最多 6 层 */
 const PERKS = [
   {id:'atk',   n:'锋锐', d:'攻击力 +4',            f:()=>P.atk += 4},
-  {id:'aspd',  n:'疾风', d:'攻击速度 +16%',         f:()=>P.atkInterval *= 0.862},
+  {id:'aspd',  n:'疾风', d:'攻击速度 +16%',   max:6, f:()=>P.atkInterval *= 0.862},
   {id:'crit',  n:'锐眼', d:'暴击率 +7%',           f:()=>P.crit = Math.min(1, P.crit + 0.07)},
   {id:'cdmg',  n:'致命', d:'暴击伤害 +35%',         f:()=>P.critDmg += 0.35},
-  {id:'hp',    n:'铁壁', d:'最大生命 +38，并立即回复', f:()=>{P.maxHp += 38; P.hp += 38;}},
-  {id:'regen', n:'再生', d:'每秒回血 +1.6',         f:()=>P.regen += 1.6},
-  {id:'dr',    n:'韧性', d:'受到的伤害 -10%', max:6, f:()=>P.dr = Math.min(0.62, P.dr + 0.10)},
-  {id:'move',  n:'迅捷', d:'移动速度 +11%',         f:()=>P.speed *= 1.11},
-  {id:'ls',    n:'嗜血', d:'吸血 +4.5%',           f:()=>P.lifesteal += 0.045},
-  {id:'proj',  n:'分裂', d:'投射物 +1（弹道自动收拢）', max:5, f:()=>P.projCount += 1},
-  {id:'range', n:'长弓', d:'射程 +22%',            f:()=>P.range *= 1.22},
-  {id:'xp',    n:'贪婪', d:'经验获取 +30%',         f:()=>P.xpGain += 0.30},
-  {id:'mag',   n:'磁力', d:'拾取范围 +45%',         f:()=>P.magnet *= 1.45},
-  {id:'thorn', n:'荆棘', d:'被撞时反伤 +7',         f:()=>P.thorns += 7},
-  {id:'kb',    n:'重击', d:'击退 +55%',            f:()=>P.knockback *= 1.55},
-  {id:'frost', n:'冰霜', d:'命中减速敌人 +13%', max:4, f:()=>P.frost = Math.min(0.6, P.frost + 0.13)},
-  {id:'poison',n:'剧毒', d:'中毒，每秒 +5 伤害',     f:()=>P.poison += 5},
-  {id:'shield',n:'护盾', d:'可再生的护盾（4 秒回一层）', f:()=>P.shieldMax += 1},
-  {id:'berserk',n:'狂暴', d:'血量越低，攻击越高', max:1, f:()=>P.berserk = 1},
+  {id:'hp',    n:'铁壁', d:'最大生命 +38，并立即回复', max:6, f:()=>{P.maxHp += 38; P.hp += 38;}},
+  {id:'regen', n:'再生', d:'每秒回血 +2.5',     max:6, f:()=>P.regen += 2.5},
+  {id:'dr',    n:'韧性', d:'受到的伤害 -10%',  max:6, f:()=>P.dr = Math.min(0.62, P.dr + 0.10)},
+  {id:'move',  n:'迅捷', d:'移动速度 +11%',    max:6, f:()=>P.speed *= 1.11},
+  {id:'ls',    n:'嗜血', d:'吸血 +4.5%',       max:6, f:()=>P.lifesteal += 0.045},
+  {id:'proj',  n:'分裂', d:'投射物 +1（弹道自动收拢）', max:6, f:()=>P.projCount += 1},
+  {id:'range', n:'长弓', d:'射程 +22%',        max:6, f:()=>P.range *= 1.22},
+  {id:'xp',    n:'贪婪', d:'经验获取 +30%',    max:6, f:()=>P.xpGain += 0.30},
+  {id:'mag',   n:'磁力', d:'拾取范围 +45%',    max:6, f:()=>P.magnet *= 1.45},
+  {id:'thorn', n:'荆棘', d:'被撞反伤＝攻击力 ×110%（每层 +10%）', max:6, f:()=>P.thorns += 1},
+  {id:'kb',    n:'重击', d:'击退 +18%',        max:6, f:()=>P.knockback *= 1.18},
+  {id:'frost', n:'冰霜', d:'减速 +13%，并有 10% 概率冻住敌人 2 秒（每层 +5%）', max:6,
+               f:()=>P.frost = Math.min(0.65, P.frost + 0.13)},
+  {id:'poison',n:'剧毒', d:'中毒，每秒 +5 伤害', max:6, f:()=>P.poison += 5},
+  {id:'shield',n:'护盾', d:'可再生的护盾（4 秒回一层）', max:6, f:()=>P.shieldMax += 1},
+  {id:'berserk',n:'狂暴', d:'血量越低攻击越高（每层最多 +20%）', max:6, f:()=>P.berserk += 0.20},
+];
+
+/* ══════════ 30 级「唯一词条」：每种只能拿一次，出现时是金卡 ══════════ */
+const UNIQUES = [
+  {id:'u2way', n:'双向攻击', u:1, d:'同时向左右两侧最近的敌人各打一轮',
+   f:()=>P.双向 = 1},
+  {id:'ucrash',n:'天崩地裂', u:1, d:'跳起来落地时砸出冲击波：攻击力 ×3 的范围伤害',
+   f:()=>P.震地 = 1},
+  {id:'uecho', n:'回响',     u:1, d:'每次攻击有 35% 概率立刻再打一轮',
+   f:()=>P.回响 = 0.35},
+  {id:'uorb',  n:'护卫星环', u:1, d:'身边常驻 3 颗光球，碰到敌人造成攻击力 ×0.6 伤害',
+   f:()=>P.卫球 = 3},
+  {id:'ulast', n:'背水一战', u:1, d:'血量低于 35% 时，攻速 +70%、移速 +35%',
+   f:()=>P.背水 = 1},
+  {id:'uchain',n:'连锁闪电', u:1, d:'投射物命中后弹向最近的敌人，最多弹 3 次',
+   f:()=>P.连锁 = 3},
 ];
 
 function perkOptions(){
-  const pool = PERKS.filter(p => !p.max || (P.inv[p.id]||0) < p.max);
   const out = [];
+  /* 30 级起，有 50% 概率抽到一张「唯一词条」（没拿过的那种）*/
+  if (P.level >= 30){
+    const up = UNIQUES.filter(u => !P.inv[u.id]);
+    if (up.length && Math.random() < 0.5) out.push(pick(up));
+  }
+  const pool = PERKS.filter(p => !p.max || (P.inv[p.id]||0) < p.max);
   while (out.length < 3 && pool.length) out.push(pool.splice((Math.random()*pool.length)|0, 1)[0]);
   return out;
 }
@@ -260,6 +289,7 @@ const ET = {
   brute:{w:18,h:20,hp:54,atk:9,spd:15,xp:2.6,fly:false,ranged:false,c1:'#ff8a4c',c2:'#a33d12'},
   thief:{w:13,h:14,hp:22,atk:5,spd:34,xp:1.8,fly:false,ranged:false,c1:'#ffd94a',c2:'#a3781a'},
   split:{w:16,h:13,hp:30,atk:6,spd:17,xp:1.6,fly:false,ranged:false,c1:'#4ad8c8',c2:'#1f7a72'},
+  mirror:{w:10,h:18,hp:40,atk:11,spd:34,xp:3.5,fly:false,ranged:false,c1:'#b03a5a',c2:'#2c3557'},
 };
 function pickType(){
   const o = ['slime','slime'];
@@ -292,11 +322,13 @@ function reset(){
     level: 1, xp: 0, xpNeed: 10, perkHalf: 0,
     kills: 0, dmgDealt: 0, inv: {},
     污染: 0, dr: 0, 无升级秒: 0,
+    双向: 0, 震地: 0, 回响: 0, 卫球: 0, 背水: 0, 连锁: 0,
   });
   enemies = []; projs = []; eprojs = []; orbs = []; parts = []; texts = [];
   pendingSpawns = [];
   特殊怪本波 = 0;
   waves = [];
+  rings = [];
   wave = 1; waveT = 0; timeAlive = 0; pendingPerks = 0;
   shake = 0; spawnT = 0.5; announce = 0;
   cam = clamp(P.x - W/2, 0, WORLD - W);
@@ -319,6 +351,26 @@ function addParts(x, y, color, n, spd){
 }
 function addText(x, y, s, color){
   texts.push({x, y, s, color, life: 0.75});
+}
+
+/* 天崩地裂：落地时对自己周围一圈造成攻击力 ×3 的伤害 */
+function 震地波(){
+  const R0 = 86, dmg = P.atk * 3;
+  for (const e of enemies){
+    if (e.dead) continue;
+    if (Math.abs(e.x - P.x) < R0 + e.w/2 &&
+        Math.abs((e.y - e.h/2) - (P.y - 9)) < R0 + e.h/2){
+      hurtEnemy(e, dmg, false);
+      e.kb = (e.x < P.x ? -1 : 1) * P.knockback * 2.4;
+    }
+  }
+  for (let i = 0; i < 26; i++){
+    parts.push({x: P.x + rand(-R0, R0), y: GROUND - rand(0, 12),
+      vx: rand(-50, 50), vy: rand(-150, -40), life: rand(0.3, 0.7), max: 0.7,
+      color: i % 2 ? '#ffd94a' : '#ff8a4c', s: 2});
+  }
+  rings.push({x: P.x, y: GROUND, r: 6, max: R0, life: 0.45, all: 0.45, color: '#ffd94a'});
+  shake = Math.max(shake, 6);
 }
 
 /* ============================ 经验 / 升级 ============================ */
@@ -356,8 +408,9 @@ function openPerk(){
   perkOptions().forEach(o => {
     const st = P.inv[o.id] || 0;
     const b = document.createElement('button');
-    b.className = 'card';
-    b.innerHTML = '<span class="n">' + o.n + '</span>'
+    b.className = 'card' + (o.u ? ' uni' : '');
+    b.innerHTML = '<span class="n">' + o.n + (o.u ? '<i class="tag">唯一</i>' : '')
+                + '</span>'
                 + '<span class="d">' + o.d + '</span>'
                 + (st ? '<span class="s">已叠 ' + st + ' 层</span>' : '');
     b.onclick = () => takePerk(o);
@@ -382,7 +435,15 @@ function hurtEnemy(e, d, isCrit){
   addText(e.x + rand(-3,3), e.y - e.h - 4, Math.round(d) + (isCrit ? '!' : ''),
           isCrit ? '#ffe066' : '#ffffff');
   if (P.lifesteal > 0) P.hp = Math.min(P.maxHp, P.hp + d * P.lifesteal);
-  if (P.frost  > 0) e.slowT  = 1.6;
+  if (P.frost  > 0){
+    e.slowT = 1.6;
+    /* 冻结：基础 10%，每层 +5%，冻住 2 秒（冻住期间不能攻击）*/
+    const 层 = P.inv.frost || 1;
+    if (Math.random() < 0.10 + 0.05 * (层 - 1)){
+      e.frozen = 2.0;
+      addText(e.x, e.y - e.h - 12, '冻结', '#7fd4ff');
+    }
+  }
   if (P.poison > 0) e.poisonT = 3.0;
   if (e.kb !== undefined) e.kb = (e.x < P.x ? -1 : 1) * P.knockback;
   if (e.hp <= 0) killEnemy(e);
@@ -472,8 +533,9 @@ function spawnEnemy(type, opts){
      不会像以前那样从第 20 波拖到第 30 波 */
   const 玩家DPS = (P.atk * P.projCount * (1 + P.crit * (P.critDmg - 1))
                    / P.atkInterval) || 10;
+  /* 镜像有 10 条命，单条血量按玩家的 4 秒输出算就够 */
   const hp = opts.boss
-      ? Math.max(300, Math.round(玩家DPS * 12))
+      ? Math.max(300, Math.round(玩家DPS * (t === 'mirror' ? 4 : 12)))
       : Math.max(1, Math.round(d.hp * hpS * hpMul));
 
   enemies.push({
@@ -490,6 +552,8 @@ function spawnEnemy(type, opts){
     boss: !!opts.boss, elite: elite, gen: opts.gen || 0,
     lives: opts.lives || 0, gained: 0, ate: 0, ateCycle: 0, settle: 5, stolen: 0,
     ult: 0, ultCd: rand(7, 11),
+    cd2: rand(1.5, 9.5), wind: 0, charging: 0, chargeDir: 1, frozen: 0, orbHit: 0,
+    act: -1, actCd: 1.2, aoe: 0,
   });
 }
 
@@ -520,7 +584,11 @@ function update(dt){
     addParts(P.x, P.y, '#5a678f', 4, 40); }
   P.vy += GRAV * dt;
   P.y  += P.vy * dt;
-  if (P.y >= GROUND){ P.y = GROUND; P.vy = 0; P.onGround = true; }
+  if (P.y >= GROUND){
+    const 刚落地 = !P.onGround;
+    P.y = GROUND; P.vy = 0; P.onGround = true;
+    if (刚落地 && P.震地 && state === 'play') 震地波();
+  }
 
   if (P.iframe > 0)  P.iframe  -= dt;
   if (P.hitFlash > 0) P.hitFlash -= dt;
@@ -542,26 +610,59 @@ function update(dt){
   }
 
   /* ---- 自动攻击 ---- */
-  P.atkTimer -= dt;
+  /* 背水一战：残血时攻速大幅提升 */
+  const 残血 = P.背水 && (P.hp / P.maxHp) < 0.35;
+  P.atkTimer -= dt * (残血 ? 1.7 : 1);
   if (P.atkTimer <= 0){
     const t = nearestEnemy();
     if (t){
       P.atkTimer = P.atkInterval;
-      const ty = t.y - t.h/2, tx = t.x;
-      let ang = Math.atan2(ty - (P.y - 9), tx - P.x);
-      P.facing = tx > P.x ? 1 : -1;
-      let dmg = P.atk * (P.berserk ? (1 + (1 - P.hp/P.maxHp) * 0.8) : 1);
-      /* 所有子弹走平行弹道，只横向错开 3.2px —— 不会散开 */
-      const nx = Math.cos(ang + Math.PI/2), ny = Math.sin(ang + Math.PI/2);
+      P.facing = t.x > P.x ? 1 : -1;
+      const dmg = P.atk * (P.berserk ? (1 + (1 - P.hp/P.maxHp) * P.berserk) : 1);
       const isCrit = Math.random() < P.crit;
-      for (let i = 0; i < P.projCount; i++){
-        const off = (i - (P.projCount-1)/2) * 3.2;
-        projs.push({x: P.x + Math.cos(ang)*8 + nx*off,
-                    y: P.y - 9 + Math.sin(ang)*8 + ny*off,
-          vx: Math.cos(ang)*P.projSpeed, vy: Math.sin(ang)*P.projSpeed,
-          dmg: dmg * (isCrit ? P.critDmg : 1), crit: isCrit, life: 1.2, dead: false});
+      /* 一发子弹的伤害；暴击整组共用一次判定 */
+      const 弹伤 = dmg * (isCrit ? P.critDmg : 1);
+      const 发 = (目标) => {
+        if (!目标) return;
+        const a = Math.atan2((目标.y - 目标.h/2) - (P.y - 9), 目标.x - P.x);
+        const nx = Math.cos(a + Math.PI/2), ny = Math.sin(a + Math.PI/2);
+        for (let i = 0; i < P.projCount; i++){
+          const off = (i - (P.projCount-1)/2) * 3.2;   /* 平行弹道，只错开 3.2px */
+          projs.push({x: P.x + Math.cos(a)*8 + nx*off,
+                      y: P.y - 9 + Math.sin(a)*8 + ny*off,
+            vx: Math.cos(a)*P.projSpeed, vy: Math.sin(a)*P.projSpeed,
+            dmg: 弹伤, crit: isCrit, life: 1.2, dead: false, chain: P.连锁 || 0});
+        }
+      };
+      发(t);
+      if (P.双向){                                /* 双向攻击：反方向再来一轮 */
+        let 反 = null, 反d = 1e9;
+        const 侧 = t.x > P.x ? -1 : 1;
+        for (const e2 of enemies){
+          if (e2.dead) continue;
+          if (Math.sign(e2.x - P.x) !== 侧) continue;
+          const d2 = Math.abs(e2.x - P.x);
+          if (d2 < 反d){ 反d = d2; 反 = e2; }
+        }
+        发(反);
       }
+      if (P.回响 && Math.random() < P.回响) 发(t);   /* 回响：立刻再打一轮 */
       addParts(P.x + P.facing*7, P.y - 9, '#9fe8ff', 3, 45);
+    }
+  }
+
+  /* ---- 护卫星环：3 颗光球绕着转 ---- */
+  if (P.卫球 > 0){
+    for (let i = 0; i < P.卫球; i++){
+      const a = timeAlive * 2.6 + i * (Math.PI * 2 / P.卫球);
+      const ox = P.x + Math.cos(a) * 30, oy = (P.y - 9) + Math.sin(a) * 30;
+      for (const e of enemies){
+        if (e.dead || (e.orbHit || 0) > 0) continue;
+        if (Math.abs(e.x - ox) < e.w/2 + 5 && oy > e.y - e.h - 5 && oy < e.y + 5){
+          e.orbHit = 0.45;
+          hurtEnemy(e, P.atk * 0.6, false);
+        }
+      }
     }
   }
 
@@ -574,6 +675,23 @@ function update(dt){
       if (Math.abs(e.x - p.x) < e.w/2 + 3 && p.y > e.y - e.h - 3 && p.y < e.y + 2){
         hurtEnemy(e, p.dmg, p.crit);
         addParts(p.x, p.y, '#ffffff', 4, 60);
+        /* 连锁闪电：弹向最近的另一个敌人 */
+        if (p.chain > 0){
+          let 目 = null, 最 = 190;
+          for (const e2 of enemies){
+            if (e2.dead || e2 === e) continue;
+            const d2 = Math.abs(e2.x - p.x) + Math.abs(e2.y - p.y);
+            if (d2 < 最){ 最 = d2; 目 = e2; }
+          }
+          if (目){
+            const a = Math.atan2((目.y - 目.h/2) - p.y, 目.x - p.x);
+            projs.push({x: p.x, y: p.y,
+              vx: Math.cos(a)*P.projSpeed, vy: Math.sin(a)*P.projSpeed,
+              dmg: p.dmg * 0.75, crit: p.crit, life: 0.9, dead: false,
+              chain: p.chain - 1});
+            addParts(p.x, p.y, '#7fd4ff', 5, 90);
+          }
+        }
         p.dead = true; break;
       }
     }
@@ -585,6 +703,7 @@ function update(dt){
     if (e.dead) continue;
     if (e.slowT  > 0) e.slowT  -= dt;
     if (e.hitT   > 0) e.hitT   -= dt;
+    if (e.orbHit  > 0) e.orbHit  -= dt;
     if (e.poisonT > 0){
       e.poisonT -= dt;
       e.hp -= P.poison * dt;
@@ -594,7 +713,7 @@ function update(dt){
     }
 
     const dx = P.x - e.x, dist = Math.abs(dx);
-    const sp = e.spd * (e.slowT > 0 ? (1 - P.frost) : 1);
+    let sp = e.spd * (e.slowT > 0 ? (1 - P.frost) : 1);
     e.face = dx > 0 ? 1 : -1;
 
     let dir = 0;
@@ -649,6 +768,28 @@ function update(dt){
       const target = P.x + e.off;
       if (Math.abs(target - e.x) > 2) dir = Math.sign(target - e.x);
     }
+    /* ---- 冲锋：平时几乎赖着不动，每 10 秒扑一次（伤害 ×2）---- */
+    if (e.frozen > 0) e.frozen -= dt;
+    if (e.wind > 0){
+      e.wind -= dt;
+      if (e.wind <= 0){ e.charging = 0.55; e.chargeDir = Math.sign(dx) || 1; }
+    }
+    if (e.charging > 0){
+      e.charging -= dt;
+      dir = e.chargeDir;
+      sp  = 235;                                   /* 冲刺速度 */
+    } else if (e.wind > 0){
+      dir = 0;                                     /* 蓄力：原地不动（闪烁预警）*/
+    } else {
+      sp *= (e.type === 'thief' ? 0.85 : 0.16);    /* 平时慢悠悠地挪 */
+      if (!e.boss){
+        e.cd2 -= dt;
+        if (e.cd2 <= 0 && dist < 320){
+          e.cd2 = 10 + rand(-1.5, 1.5);
+          e.wind = 0.42;
+        }
+      }
+    }
     e.x += (dir * sp + e.kb) * dt;
     e.kb *= Math.exp(-9 * dt);
     e.x = clamp(e.x, 8, WORLD - 8);
@@ -660,7 +801,7 @@ function update(dt){
 
     if (e.ranged){
       e.cd -= dt;
-      if (e.cd <= 0 && dist < 210){
+      if (e.cd <= 0 && dist < 210 && e.frozen <= 0){
         e.cd = rand(1.8, 2.6);
         const a = Math.atan2((P.y - 9) - (e.y - e.h/2), P.x - e.x);
         eprojs.push({x: e.x, y: e.y - e.h/2, vx: Math.cos(a)*95, vy: Math.sin(a)*95,
@@ -668,8 +809,45 @@ function update(dt){
       }
     }
 
+    /* ══ 镜像首领：每 2 秒烧掉自己一条命，做一次动作 ══ */
+    if (e.type === 'mirror' && !e.dead){
+      if (e.aoe > 0){
+        e.aoe -= dt;
+        if (Math.random() < dt * 30) addParts(e.x, e.y - e.h/2, '#ff5566', 2, 100);
+        if (e.aoe <= 0){
+          rings.push({x: e.x, y: GROUND, r: 6, max: 130, life: 0.5, all: 0.5, color: '#ff5566'});
+          if (Math.abs(P.x - e.x) < 130 && P.y > GROUND - 60) damagePlayer(e.atk * 1.6);
+          for (let k = 0; k < 12; k++){
+            const a2 = (k / 12) * Math.PI * 2;
+            eprojs.push({x: e.x, y: e.y - e.h/2, vx: Math.cos(a2)*105, vy: Math.sin(a2)*105,
+                         dmg: e.atk * 0.6, life: 3.5, dead: false});
+          }
+          shake = 8;
+        }
+      } else {
+        e.actCd -= dt;
+        if (e.actCd <= 0 && e.lives > 1){
+          e.actCd = 2;
+          e.lives--;                                  /* 每动一次烧掉一条命 */
+          e.act = ((e.act || 0) + 1) % 3;
+          addText(e.x, e.y - e.h - 14, '烧命 ' + e.lives, '#ff8a9a');
+          if (e.act === 0){                           /* 冲刺 */
+            e.charging = 0.7;
+            e.chargeDir = Math.sign(P.x - e.x) || 1;
+          } else if (e.act === 1){                    /* 分裂弹 */
+            const a = Math.atan2((P.y - 9) - (e.y - e.h/2), P.x - e.x) + rand(-0.22, 0.22);
+            eprojs.push({x: e.x, y: e.y - e.h/2, vx: Math.cos(a)*155, vy: Math.sin(a)*155,
+                         dmg: e.atk * 0.75, life: 5, dead: false, split6: true});
+          } else {                                    /* AOE */
+            e.aoe = 0.75;
+            播报('镜像 · 范围爆发');
+          }
+        }
+      }
+    }
+
     /* 首领大招：烧掉自己一条命，放一圈弹幕 + 左右地面震荡波（跳起来才能躲）*/
-    if (e.boss){
+    if (e.boss && e.type !== 'mirror'){
       if (e.ult > 0){
         e.ult -= dt;
         if (Math.random() < dt * 26) addParts(e.x, e.y - e.h/2, '#ffd94a', 3, 130);
@@ -699,27 +877,41 @@ function update(dt){
     }
 
     /* 接触伤害 */
-    if (Math.abs(e.x - P.x) < e.w/2 + 4 && e.y > P.y - 18 && e.y - e.h < P.y){
+    if (e.frozen <= 0 && Math.abs(e.x - P.x) < e.w/2 + 4 && e.y > P.y - 18 && e.y - e.h < P.y){
       if (P.iframe <= 0){
-        damagePlayer(e.atk);
+        damagePlayer(e.atk * (e.charging > 0 ? 2 : 1));   /* 冲撞伤害翻倍 */
         P.x = clamp(P.x + (P.x < e.x ? -1 : 1) * 7, 12, WORLD - 12);
-        if (P.thorns > 0) hurtEnemy(e, P.thorns, false);
+        if (P.thorns > 0) hurtEnemy(e, P.atk * (1 + 0.10 * P.thorns), false);
       }
     }
   }
 
   /* ---- 敌人弹幕 ---- */
+  const 新弹 = [];
   for (const p of eprojs){
     p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
     if (p.life <= 0){ p.dead = true; continue; }
     if (p.x < cam-40 || p.x > cam+W+40 || p.y < -20 || p.y > H+20){ p.dead = true; continue; }
-    if (Math.abs(p.x - P.x) < 6 && p.y > P.y - 19 && p.y < P.y + 1){
+    const 命中玩家 = Math.abs(p.x - P.x) < 6 && p.y > P.y - 19 && p.y < P.y + 1;
+    /* 分裂弹：碰到地面或角色，裂成 6 颗 */
+    if (p.split6 && (命中玩家 || (p.y >= GROUND - 2 && p.vy > 0))){
+      for (let k = 0; k < 6; k++){
+        const a2 = -Math.PI/2 + (k - 2.5) * 0.38;
+        新弹.push({x: p.x, y: Math.min(p.y, GROUND - 3),
+          vx: Math.cos(a2)*125, vy: Math.sin(a2)*125,
+          dmg: p.dmg * 0.5, life: 2.6, dead: false});
+      }
+      addParts(p.x, p.y, '#ff5566', 10, 110);
+      p.dead = true; continue;
+    }
+    if (命中玩家){
       damagePlayer(p.dmg);
       addParts(p.x, p.y, '#ff8a4c', 6, 60);
       p.dead = true;
     }
   }
   eprojs = eprojs.filter(p => !p.dead);
+  for (const q of 新弹) eprojs.push(q);
   enemies = enemies.filter(e => !e.dead);
 
   /* 地面震荡波：站在地上会被打到，跳起来能躲开 */
@@ -733,6 +925,9 @@ function update(dt){
     if (wv.life <= 0 || wv.x < cam - 90 || wv.x > cam + W + 90) wv.dead = true;
   }
   waves = waves.filter(wv => !wv.dead);
+
+  for (const rg of rings){ rg.life -= dt; rg.r = rg.max * (1 - rg.life / rg.all); }
+  rings = rings.filter(rg => rg.life > 0);
 
   while (pendingSpawns.length){
     const q = pendingSpawns.shift();
@@ -793,7 +988,13 @@ function update(dt){
         enemies = enemies.filter(e => !e.dead);
         播报('旧首领退场 · 新首领登场');
       }
-      spawnEnemy('thief', {boss: true, lives: 2 + Math.floor(wave/10), noElite: true});
+      /* 50 级以后，首领换成「镜像」——10 条命，每 2 秒烧一条命出一次招 */
+      if (P.level >= 50){
+        spawnEnemy('mirror', {boss: true, lives: 10, noElite: true});
+        播报('镜像降临 · 10 条命 · 每 2 秒烧命出招');
+      } else {
+        spawnEnemy('thief', {boss: true, lives: 2 + Math.floor(wave/10), noElite: true});
+      }
     }
   }
 
@@ -881,10 +1082,37 @@ function drawPlayer(){
   }
 }
 
+function drawOrbs(){
+  if (!P.卫球) return;
+  for (let i = 0; i < P.卫球; i++){
+    const a = timeAlive * 2.6 + i * (Math.PI * 2 / P.卫球);
+    const ox = P.x + Math.cos(a) * 30, oy = (P.y - 9) + Math.sin(a) * 30;
+    px(ox - 4, oy - 4, 8, 8, 'rgba(127,212,255,.30)');
+    px(ox - 2, oy - 2, 4, 4, '#7fd4ff');
+    px(ox - 1, oy - 1, 2, 2, '#ffffff');
+  }
+}
 function drawEnemy(e){
   const x = Math.round(e.x), y = Math.round(e.y);
   const l = Math.round(x - e.w/2), h = e.h;
   px(x - e.w/2, GROUND - 1, e.w, 2, 'rgba(0,0,0,.28)');
+  /* 镜像首领：用和玩家一样的模型 */
+  if (e.type === 'mirror'){
+    const k = e.h / 18, f = e.face;
+    px(x - 5*k, GROUND - 1, 10*k, 2, 'rgba(0,0,0,.35)');
+    px(x - 4*k, y - 5*k, 3*k, 5*k, '#2c3557');
+    px(x + 1*k, y - 5*k, 3*k, 5*k, '#2c3557');
+    px(x - 4*k, y - 14*k, 8*k, 9*k, e.hitT > 0 ? '#ffffff' : '#b03a5a');
+    px(x - 4*k, y - 14*k, 8*k, 2*k, '#ff8a9a');
+    px(x - 3*k, y - 19*k, 6*k, 6*k, '#d8b0b0');
+    px(x - 3*k, y - 20*k, 6*k, 2*k, '#1a0a0a');
+    px(f > 0 ? x + 1*k : x - 3*k, y - 17*k, 2*k, 2*k, '#ff3333');
+    px(f > 0 ? x + 4*k : x - 7*k, y - 12*k, 3*k, 2*k, '#8a6a4a');
+    if (e.aoe > 0) px(x - e.w, y - e.h - 3*k, e.w*2, 2, '#ff5566');
+    for (let i = 0; i < Math.min(e.lives || 0, 10); i++)
+      px(x - e.w/2 + i*4, y - e.h - 13, 3, 3, '#ff5566');
+    return;
+  }
   const body = e.hitT > 0 ? '#ffffff' : e.c1;
   const dark = e.hitT > 0 ? '#dddddd' : e.c2;
   if (e.type === 'slime'){
@@ -929,6 +1157,20 @@ function drawEnemy(e){
     const ex = e.face > 0 ? x + 1 : x - 4;
     px(ex, y - h + Math.min(4, h - 3), 2, 2, '#12121c');
     px(ex - e.face * 4, y - h + Math.min(4, h - 3), 2, 2, '#12121c');
+  }
+  /* 冻结：整体闪蓝 */
+  if (e.frozen > 0){
+    ctx.globalAlpha = 0.55;
+    px(l, y - h, e.w, h, '#7fd4ff');
+    ctx.globalAlpha = 1;
+  }
+  /* 蓄力预警：闪红 + 头顶一道预判线 */
+  if (e.wind > 0){
+    ctx.globalAlpha = Math.floor(timeAlive * 20) % 2 ? 0.7 : 0.25;
+    px(l, y - h, e.w, h, '#ff3333');
+    ctx.globalAlpha = 1;
+    const 方 = Math.sign(P.x - e.x) || 1;
+    px(x, y - h/2 - 1, 方 * 120, 2, 'rgba(255,60,60,.55)');
   }
   /* 精英/首领：金色描边 */
   if (e.boss || e.elite){
@@ -1006,6 +1248,12 @@ function render(){
     px(o.x - 2, o.y - 2, 4, 4, '#1b6f9e');
     px(o.x - 1, o.y - 1, 2, 2, '#9fe8ff');
   }
+  for (const rg of rings){
+    ctx.globalAlpha = clamp(rg.life / rg.all, 0, 1) * 0.85;
+    ctx.strokeStyle = rg.color; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(rg.x, rg.y, rg.r, rg.r * 0.32, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
   for (const wv of waves){
     ctx.globalAlpha = clamp(wv.life / 2.6, 0, 1);
     px(wv.x - 3, GROUND - 36, 6, 36, '#ffd94a');
@@ -1022,6 +1270,7 @@ function render(){
     px(p.x - 1, p.y - 1, 3, 3, '#ff8a4c');
   }
   drawPlayer();
+  drawOrbs();
   for (const q of parts){
     ctx.globalAlpha = clamp(q.life / q.max, 0, 1);
     px(q.x, q.y, q.s, q.s, q.color);
