@@ -173,6 +173,9 @@
     <b style="color:#ffe066">金色描边</b> = 精英怪（血厚、经验 ×3）<br>
     <b style="color:#ff5566">头顶红点</b> = 那个怪还剩几条命<br>
     <b style="color:#c77dff">污染值</b> = 每 10 级 +1，怪的基础数值 ×1.25（指数叠加）<br>
+    <b style="color:#c77dff">污染值</b> 每 +1，怪死后多 10% 概率留下「幽魂」；幽魂超过 5 只 → 聚合成<b>大幽魂</b><br>
+    「幽魂」悬停时<b>无形</b>（打不到），俯冲落地后有 1 秒<b>破绽</b>（伤害翻倍）<br>
+    每产出 6 只幽魂（或场上同时 6 只）→ 全部湮灭，聚合成 3 条命的<b>大幽魂</b>（唯一，新的会替换旧的）<br>
     <b style="color:#ffd94a">黄帽窃贼</b> = 抢你经验球，抢满 5 秒就换一条命
   </div>
   <button class="btn" id="bStart">开 始</button>
@@ -431,6 +434,10 @@ const ET = {
   mirror:{w:10,h:18,hp:40,atk:11,spd:34,xp:3.5,fly:false,ranged:false,c1:'#b03a5a',c2:'#2c3557'},
   wuxiang:{w:16,h:24,hp:70,atk:15,spd:30,xp:9,fly:false,ranged:false,c1:'#241a2e',c2:'#0d0812'},
   eye:{w:9,h:9,hp:26,atk:9,spd:0,xp:1.2,fly:true,ranged:true,c1:'#c77dff',c2:'#4a2a6a'},
+  /* 幽魂：污染值产出的额外怪。18 = 壮汉(54) 的 1/3，永远只有普通怪三分之一的血 */
+  ghost:   {w:11,h:11,hp:18,atk:5, spd:52,xp:1.3,fly:false,ranged:false,c1:'#dfe8ff',c2:'#8fa8d8'},
+  /* 大幽魂：6 只幽魂聚合出来的三命白灵，血按玩家 DPS 算（保证打得死）*/
+  bigghost:{w:26,h:32,hp:200,atk:5,spd:26,xp:6, fly:false,ranged:false,c1:'#f2f6ff',c2:'#9fb2dd'},
 };
 function pickType(){
   const o = ['slime','slime'];
@@ -462,7 +469,7 @@ function reset(){
     iframe: 0, hitFlash: 0,
     level: 1, xp: 0, xpNeed: 10, perkHalf: 0,
     kills: 0, dmgDealt: 0, inv: {},
-    污染: 0, dr: 0, 无升级秒: 0,
+    污染: 0, dr: 0, 无升级秒: 0, 幽魂批: 0,
     双向: 0, 震地: 0, 回响: 0, 卫球: 0, 背水: 0, 连锁: 0,
     基攻: 7, atkPct: 0, 主词条: null, 主卡池: [], 已删词条: [], 已选唯一: null,
     选序: [], 复活次数: 0, 复活CD: 0, 二段跳: 0, 跳数: 0, 贯穿: 0,
@@ -726,6 +733,8 @@ function takePerk(o){
 
 /* ============================ 伤害 ============================ */
 function hurtEnemy(e, d, isCrit){
+  if (无形(e)) return;                      /* 悬停中的幽魂：打不到 */
+  if (e.type === 'ghost' && e.僵直 > 0) d *= 2;   /* 落地僵直 = 破绽，伤害翻倍 */
   /* 「壳」形态的护盾：盾没破之前，本体一滴血都不掉 */
   if (e.盾 > 0){
     e.盾 -= d;  P.dmgDealt += d;  e.hitT = 0.09;
@@ -790,8 +799,28 @@ function killEnemy(e){
     return;
   }
 
-  /* 还有「命」就当场复活 */
-  if (e.lives > 0){
+  /* ══ 大幽魂：三条命，每掉一条命全屏染白 + 爆一圈白弹 ══ */
+  if (e.type === 'bigghost' && e.lives > 1){
+    e.lives--;
+    e.hp = e.maxHp;  e.hitT = 0.30;  e.cd = 0.6;
+    屏色 = '#ffffff';  屏力 = 0.80;  shake = 11;
+    rings.push({x: e.x, y: GROUND, r: 6, max: 170, life: 0.7, all: 0.7, color: '#ffffff'});
+    for (let k = 0; k < 18; k++){
+      const a = (k / 18) * Math.PI * 2;
+      eprojs.push({x: e.x, y: e.y - e.h/2, vx: Math.cos(a)*120, vy: Math.sin(a)*120,
+        dmg: e.atk * 0.40, life: 3.4, dead: false, 白: 1, 幻: (k % 3 === 0) ? 1 : 0});
+    }
+    for (let i = 0; i < 44; i++)
+      parts.push({x: e.x, y: e.y - e.h/2, vx: rand(-230,230), vy: rand(-230,230),
+        life: rand(0.4,0.9), max: 0.9, color: '#ffffff', s: 2});
+    addText(e.x, e.y - e.h - 16, '还剩 ' + e.lives + ' 命', '#ffffff');
+    播报('大幽魂 · 还剩 ' + e.lives + ' 命');
+    return;
+  }
+
+  /* 还有「命」就当场复活
+     （无相 / 大幽魂 的「命」是形态切换 / 重生，不走这条 —— 否则会多出一条命）*/
+  if (e.lives > 0 && e.type !== 'wuxiang' && e.type !== 'bigghost'){
     e.lives--;
     e.hp = e.maxHp;
     e.hitT = 0.25;
@@ -820,6 +849,18 @@ function killEnemy(e){
              val: e.xp + (e.stolen || 0), life: 22, dead: false});
   if (e.掉球) orbs.push({x: e.x + rand(-10,10), y: e.y - e.h/2, vy: rand(-80,-30),
              vx: rand(-40,40), val: Math.max(2, Math.round(e.xp * 0.6)), life: 22, dead: false});
+
+  /* ══ 污染值：普通怪死后，多出 10% × 污染值 的概率留下一只「幽魂」 ══
+     幽魂自己不再产幽魂，子眼也不算 —— 否则会变成无限连锁 */
+  if (e.type !== 'ghost' && e.type !== 'bigghost' && e.type !== 'eye'){
+    if (Math.random() < Math.min(1, 0.10 * (P.污染 || 0))){
+      pendingSpawns.push({type: 'ghost', opts: {x: e.x, noElite: true}});
+      P.幽魂批 = (P.幽魂批 || 0) + 1;
+      if (P.幽魂批 === 5) 播报('幽魂涌动 · 再出现一只就聚合');
+      addParts(e.x, e.y - e.h/2, '#dfe8ff', 12, 120);
+      addText(e.x, e.y - e.h - 12, '幽魂 ' + P.幽魂批 + '/6', '#dfe8ff');
+    }
+  }
 }
 function damagePlayer(d){
   if (P.iframe > 0 || state !== 'play') return;
@@ -872,8 +913,8 @@ function spawnEnemy(type, opts){
   /* 污染值：每 10 级 +1。怪的基础血量/攻击 ×1.25^污染（指数叠加）*/
   const pol = Math.pow(1.25, P.污染 || 0);
   /* 每波的自然成长放得很缓 —— 难度主要交给污染值 */
-  /* 35 波之后额外抬升：每波 ×1.05（有人反馈后期太无聊）*/
-  const 后期 = wave >= 35 ? Math.pow(1.05, wave - 35) : 1;
+  /* 35 波之后额外抬升：每波 ×1.15（玩家要求：后期必须真的变难）*/
+  const 后期 = wave >= 35 ? Math.pow(1.15, wave - 35) : 1;
   const hpS  = Math.pow(1.10, wave - 1) * pol * 后期;
   const atkS = Math.pow(1.055, wave - 1) * pol * 后期;
   const spdS = Math.min(1.7, 1 + wave * 0.022);
@@ -887,7 +928,8 @@ function spawnEnemy(type, opts){
   /* 首领的血量按玩家当前 DPS 来定 —— 保证它一定会被打死，不会拖到下一波 */
   const hp = opts.boss
       ? Math.max(300, Math.round(玩家DPS() * (t === 'mirror' ? 4 : (t === 'wuxiang' ? 7 : 12))))
-      : Math.max(1, Math.round(d.hp * hpS * hpMul));
+      : (opts.hpDps ? Math.max(180, Math.round(玩家DPS() * opts.hpDps))
+                    : Math.max(1, Math.round(d.hp * hpS * hpMul)));
 
   enemies.push({
     type: t, x, y: d.fly ? GROUND - 40 : GROUND, w, h,
@@ -903,24 +945,167 @@ function spawnEnemy(type, opts){
     boss: !!opts.boss, elite: elite, gen: opts.gen || 0,
     lives: opts.lives || 0, gained: 0, ate: 0, ateCycle: 0, settle: 5, stolen: 0,
     ult: 0, ultCd: rand(7, 11),
-    cd2: rand(1.5, 9.5), wind: 0, charging: 0, chargeDir: 1, frozen: 0, orbHit: 0,
+    cd2: (t === 'ghost' || t === 'bigghost') ? rand(0.4, 1.4) : rand(1.5, 9.5),
+    wind: 0, charging: 0, chargeDir: 1, frozen: 0, orbHit: 0,
     freezeCd: 0, poisonTick: 0.2,
     act: -1, actCd: 1.2, aoe: 0,
     形: 0, 形时: 0, 盾: 0, 盾max: 0, 连冲: 0, 蓄: 0, 转场: 0, 残影: [], 子眼计时: 3,
     寿命: t === 'eye' ? 13 : 0,
+    俯冲: 0, 僵直: 0, dvx: 0, dvy: 0, 尾: [], 幻Cd: rand(2, 4),
   });
 }
 
 /* ============================ 更新 ============================ */
+/* 幽魂悬停时是「无形」的：自动瞄准跳过它，AOE / 毒 / 荆棘也打不到。
+   只有俯冲和落地僵直时才能伤到它 —— 不然它们太脆，永远攒不到 6 只，
+   「6 只聚合大幽魂」就永远触发不了。（实测普通一局峰值只有 3 只）*/
+function 无形(e){
+  return e.type === 'ghost' && e.俯冲 <= 0 && e.僵直 <= 0;
+}
+
 function nearestEnemy(){
   let best = null, bd = P.range * P.range;
   for (const e of enemies){
-    if (e.dead) continue;
+    if (e.dead || 无形(e)) continue;
     const dx = e.x - P.x, dy = (e.y - e.h/2) - (P.y - 9);
     const d = dx*dx + dy*dy;
     if (d < bd){ bd = d; best = e; }
   }
   return best;
+}
+
+/* ══════════════════════ 幽魂 / 大幽魂 AI ══════════════════════
+   小幽魂：悬停跟随 → 闪白预警 + 一道预判线 → 俯冲 → 落地硬直（打它的窗口）
+   大幽魂：贴地悬浮逼近，发「白色子弹」—— 真弹和幻弹长得一模一样，分不出来 */
+function 幽灵AI(e, dt, dist, dx){
+  const 冻结 = e.frozen > 0;
+  /* 冰霜减速对灵体一样有效 */
+  const 慢 = e.slowT > 0 ? (1 - Math.max(P.frost, e.slowVal || 0)) : 1;
+  e.face = dx > 0 ? 1 : -1;
+  for (const q of e.尾) q.t -= dt;
+  while (e.尾.length && e.尾[0].t <= 0) e.尾.shift();
+
+  /* ── 大幽魂 ── */
+  if (e.type === 'bigghost'){
+    e.尾.push({x: e.x, y: e.y, t: 0.34});
+    e.bob += dt * 2.2;
+    const 目标 = P.x + e.off * 0.6;
+    e.x += (冻结 ? 0 : clamp(目标 - e.x, -40, 40) * 1.05 * 慢) * dt + e.kb * dt;
+    e.kb *= Math.exp(-9 * dt);
+    e.x = clamp(e.x, 8, WORLD - 8);
+    e.y = GROUND - 12 + Math.sin(e.bob) * 3;
+    if (冻结) return;
+
+    /* 幻影弹幕：一半真弹一半幻弹，外形完全一样 */
+    e.cd -= dt;
+    if (e.cd <= 0){
+      e.cd = 2.4;
+      const 总 = 12;
+      const 基 = Math.atan2((P.y - 9) - (e.y - e.h/2), P.x - e.x);
+      for (let k = 0; k < 总; k++){
+        const a = 基 + (k - (总 - 1) / 2) * 0.20;
+        eprojs.push({x: e.x, y: e.y - e.h * 0.6, vx: Math.cos(a)*118, vy: Math.sin(a)*118,
+          dmg: e.atk * 0.34, life: 4, dead: false, 白: 1, 幻: (k % 2) ? 1 : 0});
+      }
+      屏色 = '#ffffff';  屏力 = 0.20;
+    }
+    /* 追魂弹：慢慢转向你，躲不掉，只能拖到它自己消散 */
+    e.幻Cd -= dt;
+    if (e.幻Cd <= 0){
+      e.幻Cd = 5.5;
+      const 基2 = Math.atan2((P.y - 9) - (e.y - e.h/2), P.x - e.x);
+      for (let k = -1; k <= 1; k++){
+        const a = 基2 + k * 0.5;
+        eprojs.push({x: e.x, y: e.y - e.h * 0.7, vx: Math.cos(a)*86, vy: Math.sin(a)*86,
+          dmg: e.atk * 0.50, life: 3.6, dead: false, 白: 1, homing: 1.15});
+      }
+      addText(e.x, e.y - e.h - 16, '追魂', '#ffffff');
+    }
+    return;
+  }
+
+  /* ── 小幽魂 ── */
+  const 悬停高 = GROUND - 64;
+  if (e.俯冲 > 0){
+    e.俯冲 -= dt;
+    e.尾.push({x: e.x, y: e.y, t: 0.34});
+    e.x += (e.dvx + e.kb) * dt;
+    e.y += e.dvy * dt;
+    e.kb *= Math.exp(-9 * dt);
+    if (Math.random() < dt * 40) addParts(e.x, e.y - e.h/2, '#cfd9ff', 1, 30);
+    if (e.y >= GROUND - 2 || e.俯冲 <= 0){
+      e.俯冲 = 0;
+      e.y = Math.min(e.y, GROUND - 2);
+      e.僵直 = 1.0;                           /* 落地僵直 = 破绽：1 秒白打窗口 */
+      addParts(e.x, GROUND, '#8fa8d8', 12, 110);
+    }
+  } else if (e.僵直 > 0){
+    e.僵直 -= dt;
+  } else if (e.wind > 0){
+    e.wind -= dt;
+    if (e.wind <= 0){
+      const a = Math.atan2((P.y - 3) - e.y, P.x - e.x);
+      e.dvx = Math.cos(a) * 260;
+      e.dvy = Math.sin(a) * 260;
+      e.俯冲 = 0.9;
+    }
+  } else {
+    e.bob += dt * 3;
+    const tx = P.x + e.off * 2.2;
+    e.x += (冻结 ? 0 : clamp(tx - e.x, -60, 60) * 0.9 * 慢) * dt + e.kb * dt;
+    e.kb *= Math.exp(-9 * dt);
+    e.y += ((悬停高 + Math.sin(e.bob) * 7) - e.y) * Math.min(1, dt * 3);
+    e.cd2 -= dt;
+    if (e.cd2 <= 0 && dist < 280 && !冻结){
+      e.cd2 = 4.2 + rand(-1.0, 1.0);
+      e.wind = 0.35;                          /* 预警：闪白 + 一道预判线 */
+    }
+  }
+  e.x = clamp(e.x, 8, WORLD - 8);
+}
+
+/* ══════ 幽魂聚合：场上幽魂超过 5 只 → 全部湮灭，召出一只大幽魂 ══════ */
+function 幽魂结算(){
+  let 数 = 0;
+  for (const e of enemies) if (e.type === 'ghost' && !e.dead) 数++;
+  /* 两个触发条件，满足任意一个就聚合：
+     ① 场上真的同时有 6 只（严格按字面写的规则）
+     ② 这一批已经「产出过」6 只幽魂
+     为什么要补 ②：幽魂只有普通怪 1/3 的血，实测普通一局（污染 3、47 波）
+     场上幽魂峰值只有 3 只 —— 光靠 ① 永远触发不了，大幽魂一次都不会出现。*/
+  const 批 = P.幽魂批 || 0;
+  if (数 <= 5 && 批 <= 5) return;
+  P.幽魂批 = 0;
+  /* 所有幽魂当场湮灭（是聚合不是死，所以不掉经验）*/
+  let 聚合点 = null;
+  for (const e of enemies){
+    if (e.type !== 'ghost' || e.dead) continue;
+    if (!聚合点) 聚合点 = {x: e.x, y: e.y - e.h/2};
+    e.dead = true;
+    addParts(e.x, e.y - e.h/2, '#dfe8ff', 7, 90);
+  }
+  enemies = enemies.filter(e => !e.dead);
+  /* 大幽魂唯一：已经有一只 → 旧的被替换掉 */
+  let 旧 = null;
+  for (const e of enemies) if (e.type === 'bigghost' && !e.dead){ 旧 = e; break; }
+  const 位置 = 旧 ? {x: 旧.x, y: 旧.y - 旧.h/2} : 聚合点;
+  if (旧){
+    旧.dead = true;
+    enemies = enemies.filter(e => !e.dead);
+    addParts(旧.x, 旧.y - 旧.h/2, '#ffffff', 36, 230);
+    播报('大幽魂 · 重塑（满血）');
+  } else {
+    播报('幽魂聚合 · 大幽魂降临');
+  }
+  if (位置)
+    for (let i = 0; i < 28; i++)
+      parts.push({x: 位置.x, y: 位置.y, vx: rand(-210,210), vy: rand(-210,210),
+        life: rand(0.35,0.8), max: 0.8, color: '#dfe8ff', s: 2});
+  屏色 = '#ffffff';  屏力 = 0.90;  shake = 12;
+  rings.push({x: P.x, y: GROUND, r: 6, max: 190, life: 0.8, all: 0.8, color: '#ffffff'});
+  const o = {noElite: true, lives: 3, hpDps: 2.2};
+  if (旧) o.x = 旧.x;
+  spawnEnemy('bigghost', o);
 }
 
 function update(dt){
@@ -1145,6 +1330,14 @@ function update(dt){
     if (p.life <= 0 || p.y < -20 || p.y > H+20 || (!p.orbit && (p.x < cam-40 || p.x > cam+W+40))){ p.dead = true; continue; }
     for (const e of enemies){
       if (e.dead) continue;
+      /* 子弹穿过无形的幽魂：不造成伤害，只留一句提示 */
+      if (无形(e)){
+        if (Math.abs(e.x - p.x) < e.w/2 + 5 && timeAlive - (e.无形提示 || 0) > 0.5){
+          e.无形提示 = timeAlive;
+          addText(e.x, e.y - e.h - 4, '无形', '#8fa8d8');
+        }
+        continue;
+      }
       if (Math.abs(e.x - p.x) < e.w/2 + 3 && p.y > e.y - e.h - 3 && p.y < e.y + 2){
         if (p.exec && !e.boss) e.hp = 0;        /* 处决弹：直接清血 */
         let 本次 = p.dmg;
@@ -1232,11 +1425,14 @@ function update(dt){
       if (e.poisonTick <= 0){
         e.poisonTick = 0.2;
         const 毒伤 = P.atk * (0.5 + 0.2 * (Math.max(1, P.poison) - 1));
-        e.hp -= 毒伤;
-        P.dmgDealt += 毒伤;
-        if (P.武器 && (武器表[P.武器] || {}).毒吸) P.hp = Math.min(P.maxHp, P.hp + 毒伤 * 0.5);
-        if (Math.random() < 0.25)
-          addText(e.x + rand(-3,3), e.y - e.h - 4, Math.round(毒伤) + '', '#8cd94a');
+        if (无形(e)){ e.poisonT = 0; }        /* 悬停中的幽魂：毒挂不上 */
+        else {
+          e.hp -= 毒伤;
+          P.dmgDealt += 毒伤;
+          if (P.武器 && (武器表[P.武器] || {}).毒吸) P.hp = Math.min(P.maxHp, P.hp + 毒伤 * 0.5);
+          if (Math.random() < 0.25)
+            addText(e.x + rand(-3,3), e.y - e.h - 4, Math.round(毒伤) + '', '#8cd94a');
+        }
       }
       if (e.poisonT <= 0) e.poisonT = 0;
       if (Math.random() < dt*4) addParts(e.x, e.y - e.h/2, '#8cd94a', 1, 25);
@@ -1390,36 +1586,42 @@ function update(dt){
 
     /* ---- 冲锋：平时几乎赖着不动，每 10 秒扑一次（伤害 ×2）---- */
     const 无相 = (e.type === 'wuxiang');
+    const 灵体 = (e.type === 'ghost' || e.type === 'bigghost');
     if (e.frozen > 0) e.frozen -= dt;
-    if (!无相 && e.wind > 0){
-      e.wind -= dt;
-      if (e.wind <= 0){ e.charging = 0.55; e.chargeDir = Math.sign(dx) || 1; }
-    }
-    if (e.charging > 0){
-      e.charging -= dt;
-      dir = e.chargeDir;
-      sp  = 235;                                   /* 冲刺速度 */
-    } else if (e.wind > 0){
-      dir = 0;                                     /* 蓄力：原地不动（闪烁预警）*/
+    if (灵体){
+      /* 幽魂 / 大幽魂：漂浮、俯冲、白弹 —— 位移完全由自己接管 */
+      幽灵AI(e, dt, dist, dx);
     } else {
-      sp *= (e.type === 'thief' ? 0.85 : 0.16);    /* 平时慢悠悠地挪 */
-      /* 只有软体怪会冲撞：史莱姆 / 分裂体。
-         骷髅、盗贼、壮汉、首领都不冲 —— 不然前期太难受 */
-      if (!e.boss && !无相 && (e.type === 'slime' || e.type === 'split')){
-        e.cd2 -= dt;
-        if (e.cd2 <= 0 && dist < 320){
-          e.cd2 = 10 + rand(-1.5, 1.5);
-          e.wind = 0.42;
+      if (!无相 && e.wind > 0){
+        e.wind -= dt;
+        if (e.wind <= 0){ e.charging = 0.55; e.chargeDir = Math.sign(dx) || 1; }
+      }
+      if (e.charging > 0){
+        e.charging -= dt;
+        dir = e.chargeDir;
+        sp  = 235;                                   /* 冲刺速度 */
+      } else if (e.wind > 0){
+        dir = 0;                                     /* 蓄力：原地不动（闪烁预警）*/
+      } else {
+        sp *= (e.type === 'thief' ? 0.85 : 0.16);    /* 平时慢悠悠地挪 */
+        /* 只有软体怪会冲撞：史莱姆 / 分裂体。
+           骷髅、盗贼、壮汉、首领都不冲 —— 不然前期太难受 */
+        if (!e.boss && !无相 && (e.type === 'slime' || e.type === 'split')){
+          e.cd2 -= dt;
+          if (e.cd2 <= 0 && dist < 320){
+            e.cd2 = 10 + rand(-1.5, 1.5);
+            e.wind = 0.42;
+          }
         }
       }
-    }
-    e.x += (dir * sp + e.kb) * dt;
-    e.kb *= Math.exp(-9 * dt);
-    e.x = clamp(e.x, 8, WORLD - 8);
+      e.x += (dir * sp + e.kb) * dt;
+      e.kb *= Math.exp(-9 * dt);
+      e.x = clamp(e.x, 8, WORLD - 8);
 
-    if (e.fly){
-      e.bob += dt * 4;
-      e.y = GROUND - 36 + Math.sin(e.bob) * 9;
+      if (e.fly){
+        e.bob += dt * 4;
+        e.y = GROUND - 36 + Math.sin(e.bob) * 9;
+      }
     }
 
     /* 子眼：悬停不动，定期放一道竖直激光 */
@@ -1520,7 +1722,8 @@ function update(dt){
     /* 接触伤害 */
     if (e.frozen <= 0 && Math.abs(e.x - P.x) < e.w/2 + 4 && e.y > P.y - 18 && e.y - e.h < P.y){
       if (P.iframe <= 0){
-        damagePlayer(e.atk * (e.charging > 0 ? 2 : 1));   /* 冲撞伤害翻倍 */
+        /* 冲撞 / 幽魂俯冲：伤害翻倍 */
+        damagePlayer(e.atk * ((e.charging > 0 || e.俯冲 > 0) ? 2 : 1));
         P.x = clamp(P.x + (P.x < e.x ? -1 : 1) * 7, 12, WORLD - 12);
         if (P.thorns > 0) hurtEnemy(e, P.atk * (1 + 0.10 * P.thorns), false);
       }
@@ -1560,8 +1763,13 @@ function update(dt){
       p.dead = true; continue;
     }
     if (命中玩家){
-      damagePlayer(p.dmg);
-      addParts(p.x, p.y, '#ff8a4c', 6, 60);
+      if (p.幻){
+        /* 幻弹：穿身而过，只闪一下白光 —— 外形和真弹一模一样 */
+        addParts(p.x, p.y, '#ffffff', 8, 90);
+      } else {
+        damagePlayer(p.dmg);
+        addParts(p.x, p.y, '#ff8a4c', 6, 60);
+      }
       p.dead = true;
     }
   }
@@ -1598,6 +1806,9 @@ function update(dt){
     const q = pendingSpawns.shift();
     spawnEnemy(q.type, q.opts);
   }
+
+  /* ---- 幽魂聚合判定（必须在刷怪队列清空之后）---- */
+  幽魂结算();
 
   /* ---- 经验球 ---- */
   for (const o of orbs){
@@ -1843,6 +2054,102 @@ function drawEnemy(e){
     }
     return;
   }
+  /* ══ 幽魂：半透明灵体，俯冲时拉出白色残影 ══ */
+  if (e.type === 'ghost'){
+    const gw = e.w, gh = e.h;
+    const 隐 = 无形(e);
+    for (const q of e.尾){
+      ctx.globalAlpha = clamp(q.t / 0.34, 0, 1) * 0.30;
+      px(q.x - gw/2, q.y - gh, gw, gh, '#dfe8ff');
+    }
+    ctx.globalAlpha = 1;
+    const 浮 = Math.round(Math.sin(timeAlive * 3 + e.bob) * 1.5);
+    const 闪 = e.wind > 0 && Math.floor(timeAlive * 22) % 2;
+    ctx.globalAlpha = e.俯冲 > 0 ? 0.92 : (e.wind > 0 ? (闪 ? 0.95 : 0.45) : (隐 ? 0.42 : 0.78));
+    for (let i = 0; i < 3; i++){
+      const 波 = Math.round(Math.sin(timeAlive * 5 + i * 1.4 + e.bob) * 1.5);
+      px(x - gw/2 + i * (gw/3) + 1, y - 3 + 浮 + 波, gw/3 - 1, 3, '#aebde8');
+    }
+    px(x - gw/2, y - gh + 浮, gw, gh - 3, '#aebde8');
+    px(x - gw/2 + 1, y - gh + 1 + 浮, gw - 2, gh - 5, '#dfe8ff');
+    px(x - gw/2 + 2, y - gh + 2 + 浮, gw - 4, gh - 8, '#f6f9ff');
+    ctx.globalAlpha = 1;
+    px(x - 3, y - gh + 3 + 浮, 2, 3, '#1b2340');
+    px(x + 1, y - gh + 3 + 浮, 2, 3, '#1b2340');
+    if (e.wind > 0){
+      const a = Math.atan2((P.y - 3) - e.y, P.x - e.x);
+      ctx.globalAlpha = 0.55;
+      for (let k = 1; k <= 17; k++)
+        px(x + Math.cos(a) * k * 9 - 1, (y - gh/2) + Math.sin(a) * k * 9 - 1, 2, 2, '#ffffff');
+      ctx.globalAlpha = 1;
+    }
+    /* 无形：四角虚线框 —— 提示「现在打不到它」 */
+    if (隐){
+      ctx.globalAlpha = 0.35 + 0.25 * Math.sin(timeAlive * 8);
+      const cw = 3, od = 4;
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]){
+        const cx = x + sx * (gw/2 + od), cy = (y - gh/2) + sy * (gh/2 + od);
+        px(cx - (sx > 0 ? cw : 0), cy, cw, 1, '#8fa8d8');
+        px(cx, cy - (sy > 0 ? cw : 0), 1, cw, '#8fa8d8');
+      }
+      ctx.globalAlpha = 1;
+    }
+    /* 破绽：落地僵直的 1 秒里伤害翻倍 */
+    if (e.僵直 > 0){
+      ctx.globalAlpha = Math.floor(timeAlive * 14) % 2 ? 0.90 : 0.45;
+      px(x - gw/2 - 1, y - gh - 1, gw + 2, 1, '#ffe066');
+      px(x - gw/2 - 1, y - 1, gw + 2, 1, '#ffe066');
+      px(x - gw/2 - 1, y - gh - 1, 1, gh + 2, '#ffe066');
+      px(x + gw/2, y - gh - 1, 1, gh + 2, '#ffe066');
+      ctx.globalAlpha = 1;
+      ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffe066';
+      ctx.fillText('破绽', x, y - gh - 6);
+      ctx.textAlign = 'left';
+    }
+    return;
+  }
+  /* ══ 大幽魂：三命白灵，裾摆拖地 ══ */
+  if (e.type === 'bigghost'){
+    const bw = e.w, bh = e.h;
+    for (const q of e.尾){
+      ctx.globalAlpha = clamp(q.t / 0.34, 0, 1) * 0.22;
+      px(q.x - bw/2, q.y - bh, bw, bh, '#ffffff');
+    }
+    const 呼吸 = 0.55 + 0.45 * Math.sin(timeAlive * 3);
+    ctx.globalAlpha = 1;
+    ctx.globalAlpha = 0.10 + 0.10 * 呼吸;
+    px(x - bw/2 - 8, y - bh - 8, bw + 16, bh + 16, '#dfe8ff');
+    ctx.globalAlpha = 1;
+    for (let i = 0; i < 5; i++){
+      const 波 = Math.round(Math.sin(timeAlive * 4 + i * 1.1) * 2);
+      px(x - bw/2 + i * (bw/5) + 1, y - 4 + 波, bw/5 - 1, 4, '#9fb2dd');
+    }
+    px(x - bw/2, y - bh, bw, bh - 3, '#9fb2dd');
+    px(x - bw/2 + 1, y - bh + 1, bw - 2, bh - 5, '#dfe8ff');
+    px(x - bw/2 + 3, y - bh + 3, bw - 6, bh - 9, '#ffffff');
+    px(x - 5, y - bh * 0.62, 10, 10, '#141a33');
+    ctx.globalAlpha = 0.5 + 0.5 * 呼吸;
+    px(x - 3, y - bh * 0.62 + 2, 6, 6, '#ffffff');
+    ctx.globalAlpha = 1;
+    px(x - 9, y - bh + 5, 4, 3, '#1b2340');
+    px(x + 5, y - bh + 5, 4, 3, '#1b2340');
+    px(x - 2, y - bh + 10, 4, 2, '#1b2340');
+    for (let i = 0; i < 3; i++){
+      ctx.globalAlpha = i < (e.lives || 0) ? (0.6 + 0.4 * Math.sin(timeAlive * 6 + i)) : 0.18;
+      px(x - 13 + i * 9, y - bh - 15, 5, 5, '#ffffff');
+    }
+    ctx.globalAlpha = 1;
+    const bw2 = 40;
+    px(x - bw2/2, y - bh - 8, bw2, 3, 'rgba(0,0,0,.7)');
+    px(x - bw2/2, y - bh - 8, Math.max(0, bw2 * clamp(e.hp/e.maxHp, 0, 1)), 3, '#ffffff');
+    ctx.globalAlpha = 0.30;  px(x - bw2/2, y - bh - 11, bw2, 2, '#ffffff');  ctx.globalAlpha = 1;
+    ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('大幽魂', x, y - bh - 20);
+    ctx.textAlign = 'left';
+    return;
+  }
   /* 子眼 */
   if (e.type === 'eye'){
     const 呼 = 0.55 + 0.45 * Math.sin(timeAlive * 8);
@@ -2042,6 +2349,15 @@ function render(){
     px(p.x - 2, p.y - 2, 4, 4, p.crit ? '#ffe066' : '#9fe8ff');
   }
   for (const p of eprojs){
+    if (p.白){
+      /* 白色子弹：真弹和幻弹画得一模一样 —— 这就是它的「迷惑性」 */
+      ctx.globalAlpha = 0.22 + 0.16 * Math.sin(timeAlive * 18 + p.x);
+      px(p.x - 4, p.y - 4, 9, 9, '#cfe0ff');
+      ctx.globalAlpha = 1;
+      px(p.x - 2, p.y - 2, 5, 5, '#ffffff');
+      px(p.x - 1, p.y - 1, 3, 3, '#ffffff');
+      continue;
+    }
     px(p.x - 2, p.y - 2, 5, 5, '#7a2a08');
     px(p.x - 1, p.y - 1, 3, 3, '#ff8a4c');
   }
