@@ -31,6 +31,13 @@
   .card .n{display:block;font-size:18px;font-weight:bold;color:#ffe066;letter-spacing:2px}
   .card .d{display:block;font-size:14px;color:#9fb0dd;margin-top:5px}
   .card .s{display:block;font-size:12px;color:#5f7099;margin-top:4px}
+  .card.main{border-color:#ffe066;background:#1c1a0e;box-shadow:0 0 16px rgba(255,224,102,.3)}
+  .card.main .n{color:#ffe066;font-size:20px}
+  .card .tag2{font-style:normal;font-size:11px;margin-left:8px;padding:1px 7px;
+    border-radius:8px;background:#ffe066;color:#231c00;vertical-align:2px}
+  .card.unlock{border-color:#7fffd4;background:#0f2620;
+    box-shadow:0 0 12px rgba(127,255,212,.28)}
+  .card.unlock .n{color:#7fffd4}
   .card.uni{border-color:#ffe066;background:#251f0e;
     box-shadow:0 0 14px rgba(255,224,102,.35)}
   .card.uni .n{color:#ffd94a}
@@ -97,6 +104,7 @@
             text-shadow:0 1px 3px #000,0 0 4px #000}
   #hud .row .lv{color:#ffe066;font-weight:bold;font-size:1.25em}
   #hud .row .pol,#hud .row .polx{color:#3f4870}
+  #hud .row .mp{color:#ffe066;font-weight:bold;letter-spacing:.05em}
   #hud .row .pol.on{color:#c77dff;font-weight:bold}
   #hud .row .polx.on{color:#9a6fc0}
   #hudR{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:.1em;
@@ -132,6 +140,7 @@
           <span id="hPol" class="pol"></span>
           <span id="hPolX" class="polx"></span>
         </div>
+        <div class="row"><span id="hMainPk" class="mp"></span></div>
       </div>
       <div id="hudR">
         <span id="hWave"></span>
@@ -167,6 +176,12 @@
     <b style="color:#ffd94a">黄帽窃贼</b> = 抢你经验球，抢满 5 秒就换一条命
   </div>
   <button class="btn" id="bStart">开 始</button>
+</div>
+
+<div id="mainperk" class="ov hide">
+  <h2 id="mpTitle">选 择 主 词 条</h2>
+  <div id="mpSub" style="font-size:13px;color:#8d9bc4;text-align:center;line-height:1.9;margin-bottom:14px"></div>
+  <div id="mainCards" style="width:100%;max-width:470px"></div>
 </div>
 
 <div id="perk" class="ov hide">
@@ -228,28 +243,82 @@ let keys = {};
 /* ============================ 词条 ============================ */
 /* 只有 锋锐 / 锐眼 / 致命 是纯数值且无上限，其余全部最多 6 层 */
 const PERKS = [
-  {id:'atk',   n:'锋锐', d:'攻击力 +4',            f:()=>P.atk += 4},
-  {id:'aspd',  n:'疾风', d:'攻击速度 +16%',   max:6, f:()=>P.atkInterval *= 0.862},
+  {id:'atk',   n:'锋锐', d:'基础攻击力 +4',        f:()=>P.基攻 += 4},
+  {id:'aspd',  n:'疾风', d:'攻击速度 +8%',    max:6, f:()=>P.atkInterval *= 0.92},
   {id:'crit',  n:'锐眼', d:'暴击率 +7%',           f:()=>P.crit = Math.min(1, P.crit + 0.07)},
   {id:'cdmg',  n:'致命', d:'暴击伤害 +35%',         f:()=>P.critDmg += 0.35},
   {id:'hp',    n:'铁壁', d:'最大生命 +38，并立即回复', max:6, f:()=>{P.maxHp += 38; P.hp += 38;}},
-  {id:'regen', n:'再生', d:'每秒回血 +2.5',     max:6, f:()=>P.regen += 2.5},
+  {id:'regen', n:'再生', d:'每秒回血 +2.5，并 +1 次复活（回半血，10 分钟 CD）', max:6,
+               f:()=>{P.regen += 2.5; P.复活次数 = (P.复活次数 || 0) + 1;}},
   {id:'dr',    n:'韧性', d:'受到的伤害 -10%',  max:6, f:()=>P.dr = Math.min(0.62, P.dr + 0.10)},
   {id:'move',  n:'迅捷', d:'移动速度 +11%',    max:6, f:()=>P.speed *= 1.11},
-  {id:'ls',    n:'嗜血', d:'吸血 +4.5%',       max:6, f:()=>P.lifesteal += 0.045},
+  {id:'ls',    n:'嗜血', d:'吸血 +3%',         max:6, f:()=>P.lifesteal += 0.03},
   {id:'proj',  n:'分裂', d:'投射物 +1（弹道自动收拢）', max:6, f:()=>P.projCount += 1},
-  {id:'range', n:'长弓', d:'射程 +22%',        max:6, f:()=>P.range *= 1.22},
+  {id:'range', n:'长弓', d:'射程 +4%',         max:6, f:()=>P.range *= 1.04},
   {id:'xp',    n:'贪婪', d:'经验获取 +30%',    max:6, f:()=>P.xpGain += 0.30},
-  {id:'mag',   n:'磁力', d:'拾取范围 +45%',    max:6, f:()=>P.magnet *= 1.45},
   {id:'thorn', n:'荆棘', d:'被撞反伤＝攻击力 ×110%（每层 +10%）', max:6, f:()=>P.thorns += 1},
   {id:'kb',    n:'重击', d:'击退 +18%',        max:6, f:()=>P.knockback *= 1.18},
-  {id:'frost', n:'冰霜', d:'减速 +13%，并有 10% 概率冻住敌人 2 秒（每层 +5%，内置 3 秒 CD）', max:6,
-               f:()=>P.frost = Math.min(0.65, P.frost + 0.13)},
+  {id:'frost', n:'冰霜', d:'减速 +8%，并有 10% 概率冻住敌人 2 秒（每层 +5%，内置 3 秒 CD）', max:6,
+               f:()=>P.frost = Math.min(0.48, P.frost + 0.08)},
   {id:'poison',n:'剧毒', d:'中毒：每 0.2 秒造成攻击力 ×50% 伤害（每层 +20%）', max:6,
                f:()=>P.poison += 1},
   {id:'shield',n:'护盾', d:'可再生的护盾（4 秒回一层）', max:6, f:()=>P.shieldMax += 1},
   {id:'berserk',n:'狂暴', d:'血量越低攻击越高（每层最多 +20%）', max:6, f:()=>P.berserk += 0.20},
 ];
+
+/* ══════════ 主词条解锁的「进阶词条」（k:1 = 卡面是青色，50% 概率出现）══════════ */
+const UNLOCK = [
+  {id:'atkpct', n:'攻击力百分比', k:1, max:30,
+   d:'最终攻击力 = 基础攻击力 × (1 + 10%)  最多堆到 300%',
+   f:()=>P.atkPct = (P.atkPct || 0) + 0.10},
+  {id:'aspd2',  n:'疾风·续', k:1, max:6, d:'攻击速度 +8%（把砍掉的那一半补回来）',
+   f:()=>P.atkInterval *= 0.92},
+  {id:'critsplit', n:'裂空', k:1, max:8,
+   d:'命中时按「暴击率 × 30%」概率让子弹分裂（每层 +10%，最高 ×100%）',
+   f:()=>P.critSplit = Math.min(1, (P.critSplit || 0) + 0.10)},
+  {id:'snipe',  n:'致命一击', k:1, max:7,
+   d:'每 10 秒发射一颗重弹，伤害 = 攻击力 × (1 + 暴击伤害)；每层 CD −1 秒（最少 4 秒）',
+   f:()=>P.snipe = (P.snipe || 0) + 1},
+  {id:'hpup',   n:'铁壁·续', k:1, max:4,
+   d:'每分钟生命上限 +5，每层再多 +5（最高 +20/分钟）',
+   f:()=>P.hpup = (P.hpup || 0) + 1},
+  {id:'execute',n:'处决', k:1, max:5,
+   d:'血量低于 50% 时发射必杀弹：秒杀一只非首领小怪，并回复 10% 血量（每层 +10%，最高 50%）',
+   f:()=>P.execute = (P.execute || 0) + 1},
+  {id:'splitp', n:'分裂+', k:1, max:5,
+   d:'额外射出重弹（伤害 ×1.5），每层 +1 颗',
+   f:()=>P.splitp = (P.splitp || 0) + 1},
+  {id:'bianque',n:'扁鹊', k:1, max:3,
+   d:'投掷毒弹，落点小范围 AOE 并让敌人中毒；每层范围更大',
+   f:()=>P.bianque = (P.bianque || 0) + 1},
+  {id:'ice',    n:'寒冰', k:1, max:6,
+   d:'每 10 秒降下一颗寒冰，冻住最近的怪 10 秒；每层 CD −1 秒（最少 5 秒）',
+   f:()=>P.ice = (P.ice || 0) + 1},
+  /* 你没提到的主词条，各配一个便宜的数值进阶，免得选它们等于白选 */
+  {id:'dr2',    n:'不动如山', k:1, max:6, d:'受到的伤害再 −3%',
+   f:()=>P.dr = Math.min(0.80, P.dr + 0.03)},
+  {id:'thorn2', n:'铁刺', k:1, max:6, d:'荆棘反伤再 +30% 攻击力',
+   f:()=>P.thorns += 3},
+  {id:'kb2',    n:'震荡', k:1, max:6, d:'击退再 +25%',
+   f:()=>P.knockback *= 1.25},
+  {id:'shield2',n:'圣盾', k:1, max:4, d:'护盾上限 +1（可突破 6 层）',
+   f:()=>P.shieldMax += 1},
+  {id:'berserk2',n:'死志', k:1, max:6, d:'残血时吸血 +5%',
+   f:()=>P.lifesteal += 0.05},
+];
+const 解锁表 = {
+  atk:['atkpct'], aspd:['aspd2'], crit:['critsplit'], cdmg:['snipe'],
+  hp:['hpup'], ls:['execute'], proj:['splitp'], poison:['bianque'], frost:['ice'],
+  dr:['dr2'], thorn:['thorn2'], kb:['kb2'], shield:['shield2'], berserk:['berserk2'],
+  move:[], range:[], xp:[], regen:[],
+};
+/* 主词条本身的效果（不是可选词条的那种）*/
+function 应用主词条(id){
+  if (id === 'move')  P.二段跳 = 1;                                  /* 迅捷 → 二段跳 */
+  if (id === 'range') P.贯穿 = 3;                                    /* 长弓 → 子弹贯穿 */
+  if (id === 'xp'){  P.xpGain += 3; P.已删词条.push('xp'); }          /* 贪婪 → 经验 +300% 并删除 */
+  if (id === 'hp'){  P.已删词条.push('hp'); }                        /* 铁壁 → 删除（效果保留）*/
+}
 
 /* ══════════ 30 级「唯一词条」：每种只能拿一次，出现时是金卡 ══════════ */
 const UNIQUES = [
@@ -269,14 +338,36 @@ const UNIQUES = [
 
 function perkOptions(){
   const out = [];
-  /* 30 级起，有 50% 概率抽到一张「唯一词条」（没拿过的那种）*/
-  if (P.level >= 30){
-    const up = UNIQUES.filter(u => !P.inv[u.id]);
-    if (up.length && Math.random() < 0.5) out.push(pick(up));
+  /* 已选主词条之后：可选词条变成 4 个
+     并且它的「解锁词条」有 50% 概率出现在这次选择里（卡面是特殊颜色）*/
+  const 卡数 = P.主词条 ? 4 : 3;
+  if (P.主卡池 && P.主卡池.length){
+    const 可用 = P.主卡池.filter(id => {
+      const d = 按id找词条(id);
+      return d && (!d.max || (P.inv[id] || 0) < d.max);
+    });
+    if (可用.length && Math.random() < 0.5) out.push(按id找词条(pick(可用)));
   }
-  const pool = PERKS.filter(p => !p.max || (P.inv[p.id]||0) < p.max);
-  while (out.length < 3 && pool.length) out.push(pool.splice((Math.random()*pool.length)|0, 1)[0]);
+  const pool = PERKS.filter(p => !P.已删词条.includes(p.id))
+                    .filter(p => !p.max || (P.inv[p.id]||0) < p.max);
+  while (out.length < 卡数 && pool.length) out.push(pool.splice((Math.random()*pool.length)|0, 1)[0]);
   return out;
+}
+function 按id找词条(id){
+  for (const a of [UNLOCK, PERKS, UNIQUES]) for (const x of a) if (x.id === id) return x;
+  return null;
+}
+/* 记录每一次选词条的顺序，用来给主词条排名做「并列取先到者」 */
+function 记一笔(id){ P.选序.push(id); }
+/* 主词条候选：按选择次数排名，并列时取「先达到这个次数」的 */
+function 主词条候选(){
+  const 统计 = {};
+  P.选序.forEach((id, i) => { (统计[id] = 统计[id] || []).push(i); });
+  return Object.keys(统计)
+    .filter(id => id !== 'regen')                     /* 再生不做主词条 */
+    .map(id => ({ id, n: 统计[id].length, 到: 统计[id][统计[id].length - 1] }))
+    .sort((a, b) => (b.n - a.n) || (a.到 - b.到))
+    .slice(0, 3);
 }
 function perkCount(){
   let n = 0; for (const k in P.inv) n += P.inv[k]; return n;
@@ -315,8 +406,8 @@ function reset(){
     hp: 130, maxHp: 130,
     atk: 7, atkInterval: 0.62, atkTimer: 0,
     crit: 0.05, critDmg: 1.5, speed: 78,
-    lifesteal: 0, regen: 0, projCount: 1, projSpeed: 250, range: 132,
-    knockback: 45, xpGain: 1, magnet: 34,
+    lifesteal: 0, regen: 0, projCount: 1, projSpeed: 250, range: 126,
+    knockback: 45, xpGain: 1, magnet: 72,
     thorns: 0, frost: 0, poison: 0,
     shieldMax: 0, shield: 0, shieldT: 0, berserk: 0,
     iframe: 0, hitFlash: 0,
@@ -324,6 +415,10 @@ function reset(){
     kills: 0, dmgDealt: 0, inv: {},
     污染: 0, dr: 0, 无升级秒: 0,
     双向: 0, 震地: 0, 回响: 0, 卫球: 0, 背水: 0, 连锁: 0,
+    基攻: 7, atkPct: 0, 主词条: null, 主卡池: [], 已删词条: [], 已选唯一: null,
+    选序: [], 复活次数: 0, 复活CD: 0, 二段跳: 0, 跳数: 0, 贯穿: 0,
+    hpup: 0, snipeCd: 0, execCd: 0, bianCd: 0, iceCd: 0, critSplit: 0, splitp: 0,
+    snipe: 0, execute: 0, bianque: 0, ice: 0, 跳锁: 0,
   });
   enemies = []; projs = []; eprojs = []; orbs = []; parts = []; texts = [];
   pendingSpawns = [];
@@ -399,7 +494,74 @@ function addXp(v){
     shake = 5;
     addParts(P.x, P.y - 9, '#c77dff', 30, 180);
   }
-  if (pendingPerks > 0 && state === 'play') openPerk();
+  if (pendingPerks > 0 && state === 'play'){
+    if (!P.主词条 && P.level >= 9) 开主词条选择();
+    else if (!P.已选唯一 && P.level >= 30) 开唯一选择();
+    else openPerk();
+  }
+}
+
+/* ============================ 主词条 · 选择界面 ============================ */
+function 开主词条选择(){
+  state = 'main'; keys = {};
+  $('mpTitle').textContent = '选 择 主 词 条';
+  $('mpSub').innerHTML = '从你选得最多的 3 个里挑一个<br>'
+    + '选完之后，<b>每次可选词条变成 4 个</b>，并且解锁一条进阶词条';
+  const box = $('mainCards'); box.innerHTML = '';
+  主词条候选().forEach(c => {
+    const o = 按id找词条(c.id);
+    if (!o) return;
+    const 池 = 解锁表[c.id] || [];
+    const 解锁说明 = 池.length
+      ? '解锁：' + 池.map(x => (按id找词条(x) || {}).n).join('、')
+      : (c.id === 'move'  ? '解锁：二段跳'
+       : c.id === 'range' ? '解锁：子弹贯穿'
+       : c.id === 'xp'    ? '解锁：经验获取 +300%，并删除「贪婪」'
+       : c.id === 'hp'    ? '删除「铁壁」，不会再被抽到'
+       : '（没有新词条）');
+    const b = document.createElement('button');
+    b.className = 'card main';
+    b.innerHTML = '<span class="n">' + o.n + '<i class="tag2">主词条</i></span>'
+                + '<span class="d">本局已选 ' + c.n + ' 次</span>'
+                + '<span class="s">' + 解锁说明 + '</span>';
+    b.onclick = () => 定主词条(c.id);
+    box.appendChild(b);
+  });
+  $('mainperk').classList.remove('hide');
+}
+function 定主词条(id){
+  应用主词条(id);
+  P.主词条 = id;
+  P.主卡池 = 解锁表[id] || [];
+  const o = 按id找词条(id);
+  $('mainperk').classList.add('hide');
+  播报('主词条：' + (o ? o.n : id));
+  if (pendingPerks > 0) openPerk(); else state = 'play';
+}
+
+/* ============================ 30 级 · 唯一词条 六选一 ============================ */
+function 开唯一选择(){
+  state = 'main'; keys = {};
+  $('mpTitle').textContent = '唯 一 词 条 · 六 选 一';
+  $('mpSub').innerHTML = '整个这一局<b>只有这一次</b><br>选完就不会再出现了';
+  const box = $('mainCards'); box.innerHTML = '';
+  UNIQUES.forEach(o => {
+    const b = document.createElement('button');
+    b.className = 'card uni';
+    b.innerHTML = '<span class="n">' + o.n + '<i class="tag">唯一</i></span>'
+                + '<span class="d">' + o.d + '</span>';
+    b.onclick = () => 定唯一(o.id);
+    box.appendChild(b);
+  });
+  $('mainperk').classList.remove('hide');
+}
+function 定唯一(id){
+  P.已选唯一 = id;
+  const o = 按id找词条(id);
+  if (o){ o.f(); P.inv[id] = 1; }
+  $('mainperk').classList.add('hide');
+  播报('唯一词条：' + (o ? o.n : id));
+  if (pendingPerks > 0) openPerk(); else state = 'play';
 }
 
 /* ============================ 词条面板 ============================ */
@@ -409,7 +571,7 @@ function openPerk(){
   perkOptions().forEach(o => {
     const st = P.inv[o.id] || 0;
     const b = document.createElement('button');
-    b.className = 'card' + (o.u ? ' uni' : '');
+    b.className = 'card' + (o.u ? ' uni' : (o.k ? ' unlock' : ''));
     b.innerHTML = '<span class="n">' + o.n + (o.u ? '<i class="tag">唯一</i>' : '')
                 + '</span>'
                 + '<span class="d">' + o.d + '</span>'
@@ -422,6 +584,7 @@ function openPerk(){
 function takePerk(o){
   o.f();
   P.inv[o.id] = (P.inv[o.id] || 0) + 1;
+  记一笔(o.id);
   pendingPerks--;
   $('perk').classList.add('hide');
   if (pendingPerks > 0) openPerk();
@@ -502,6 +665,18 @@ function damagePlayer(d){
   if (P.hp <= 0){ P.hp = 0; die(); }
 }
 function die(){
+  /* 再生：攒下来的复活次数，回半血并给 3 秒无敌（内置 10 分钟 CD）*/
+  if (P.复活次数 > 0 && P.复活CD <= 0){
+    P.复活次数--;
+    P.复活CD   = 600;
+    P.hp       = P.maxHp * 0.5;
+    P.iframe   = 3;
+    shake      = 9;
+    addText(P.x, P.y - 40, '复 活 ！', '#ffe066');
+    addParts(P.x, P.y - 9, '#ffe066', 44, 240);
+    播报('再生 · 复活（还剩 ' + P.复活次数 + ' 次）');
+    return;
+  }
   state = 'dead'; keys = {};
   $('dStats').innerHTML =
     '存活 <b>' + timeAlive.toFixed(1) + '</b> 秒<br>' +
@@ -578,6 +753,7 @@ function nearestEnemy(){
 
 function update(dt){
   timeAlive += dt;
+  P.atk = (P.基攻 || 7) * (1 + (P.atkPct || 0));
   if (shake > 0) shake = Math.max(0, shake - dt * 14);
   if (announce > 0) announce -= dt;
 
@@ -587,13 +763,20 @@ function update(dt){
   if (keys.right) mx += 1;
   P.x = clamp(P.x + mx * P.speed * dt, 12, WORLD - 12);
   if (mx) P.facing = mx;
-  if (keys.jump && P.onGround){ P.vy = -178; P.onGround = false;
-    addParts(P.x, P.y, '#5a678f', 4, 40); }
+  if (keys.jump){
+    if (P.onGround){                       /* 第一段跳 */
+      P.vy = -178; P.onGround = false; P.跳数 = 1;
+      addParts(P.x, P.y, '#5a678f', 4, 40);
+    } else if (P.二段跳 && P.跳数 < 2 && !P.跳锁){   /* 迅捷主词条：二段跳 */
+      P.vy = -162; P.跳数 = 2; P.跳锁 = 1;
+      addParts(P.x, P.y, '#7fd4ff', 10, 90);
+    }
+  } else P.跳锁 = 0;
   P.vy += GRAV * dt;
   P.y  += P.vy * dt;
   if (P.y >= GROUND){
     const 刚落地 = !P.onGround;
-    P.y = GROUND; P.vy = 0; P.onGround = true;
+    P.y = GROUND; P.vy = 0; P.onGround = true; P.跳数 = 0; P.跳锁 = 0;
     if (刚落地 && P.震地 && state === 'play') 震地波();
   }
 
@@ -614,6 +797,66 @@ function update(dt){
   P.无升级秒 += dt;
   if (P.无升级秒 >= 60){
     addXp((P.xpNeed / 60) * dt / P.xpGain);
+  }
+
+  /* ---- 主词条解锁的进阶效果 ---- */
+  if (P.复活CD > 0) P.复活CD -= dt;
+  if (P.hpup){                                  /* 铁壁·续：上限随时间涨 */
+    const 增 = (5 * P.hpup) / 60 * dt;
+    P.maxHp += 增; P.hp = Math.min(P.maxHp, P.hp + 增);
+  }
+  if (P.snipe){                                 /* 致命一击：每 CD 秒一颗重弹 */
+    P.snipeCd -= dt;
+    if (P.snipeCd <= 0){
+      const 目 = nearestEnemy();
+      if (目){
+        P.snipeCd = Math.max(4, 11 - P.snipe);
+        const a = Math.atan2((目.y - 目.h/2) - (P.y - 9), 目.x - P.x);
+        projs.push({x: P.x, y: P.y - 9, vx: Math.cos(a)*P.projSpeed, vy: Math.sin(a)*P.projSpeed,
+          dmg: P.atk * (1 + P.critDmg), crit: true, life: 2, dead: false, big: 1});
+        addParts(P.x, P.y - 9, '#ffe066', 8, 110);
+      }
+    }
+  }
+  if (P.execute && P.hp / P.maxHp < 0.5){       /* 处决：残血时秒一只小怪 */
+    P.execCd -= dt;
+    if (P.execCd <= 0){
+      const 目 = nearestEnemy();
+      if (目 && !目.boss && !目.mirror){
+        P.execCd = 30;
+        const a = Math.atan2((目.y - 目.h/2) - (P.y - 9), 目.x - P.x);
+        projs.push({x: P.x, y: P.y - 9, vx: Math.cos(a)*430, vy: Math.sin(a)*430,
+          dmg: 1, crit: true, life: 2, dead: false, exec: true, big: 2});
+        P.hp = Math.min(P.maxHp, P.hp + P.maxHp * 0.10 * P.execute);
+        addText(P.x, P.y - 36, '回血 ' + (10 * P.execute) + '%', '#ff8aa8');
+      }
+    }
+  }
+  if (P.bianque){                               /* 扁鹊：投毒弹 */
+    P.bianCd -= dt;
+    if (P.bianCd <= 0){
+      const 目 = nearestEnemy();
+      if (目){
+        P.bianCd = 1.5;
+        const a = Math.atan2((目.y - 目.h/2) - (P.y - 9), 目.x - P.x);
+        projs.push({x: P.x, y: P.y - 9, vx: Math.cos(a)*215, vy: Math.sin(a)*215,
+          dmg: P.atk * 1.2, crit: false, life: 1.6, dead: false,
+          aoe: 26 + 10 * P.bianque, poison: true});
+      }
+    }
+  }
+  if (P.ice){                                   /* 寒冰：定期冰封最近的怪 */
+    P.iceCd -= dt;
+    if (P.iceCd <= 0){
+      const 目 = nearestEnemy();
+      if (目){
+        P.iceCd = Math.max(5, 11 - P.ice);
+        目.frozen = 10;
+        addText(目.x, 目.y - 目.h - 14, '冰封 10 秒', '#7fd4ff');
+        addParts(目.x, 目.y - 目.h/2, '#7fd4ff', 20, 140);
+        rings.push({x: 目.x, y: GROUND, r: 4, max: 34, life: 0.35, all: 0.35, color: '#7fd4ff'});
+      }
+    }
   }
 
   /* ---- 自动攻击 ---- */
@@ -638,10 +881,23 @@ function update(dt){
           projs.push({x: P.x + Math.cos(a)*8 + nx*off,
                       y: P.y - 9 + Math.sin(a)*8 + ny*off,
             vx: Math.cos(a)*P.projSpeed, vy: Math.sin(a)*P.projSpeed,
-            dmg: 弹伤, crit: isCrit, life: 1.2, dead: false, chain: P.连锁 || 0});
+            dmg: 弹伤, crit: isCrit, life: 1.2, dead: false,
+            chain: P.连锁 || 0, pierce: P.贯穿 || 0});
         }
       };
       发(t);
+      /* 分裂+：额外射出的重弹，伤害 ×1.5 */
+      if (P.splitp > 0){
+        const a = Math.atan2((t.y - t.h/2) - (P.y - 9), t.x - P.x);
+        const px2 = Math.cos(a + Math.PI/2), py2 = Math.sin(a + Math.PI/2);
+        for (let i = 0; i < P.splitp; i++){
+          const off = (i - (P.splitp - 1)/2) * 6.5;
+          projs.push({x: P.x + Math.cos(a)*9 + px2*off, y: P.y - 9 + Math.sin(a)*9 + py2*off,
+            vx: Math.cos(a)*P.projSpeed*1.12, vy: Math.sin(a)*P.projSpeed*1.12,
+            dmg: 弹伤 * 1.5, crit: isCrit, life: 1.3, dead: false, big: 1, chain: 0});
+        }
+        addParts(P.x, P.y - 9, '#7fffd4', 8, 120);
+      }
       if (P.双向){                                /* 双向攻击：反方向再来一轮 */
         let 反 = null, 反d = 1e9;
         const 侧 = t.x > P.x ? -1 : 1;
@@ -680,8 +936,31 @@ function update(dt){
     for (const e of enemies){
       if (e.dead) continue;
       if (Math.abs(e.x - p.x) < e.w/2 + 3 && p.y > e.y - e.h - 3 && p.y < e.y + 2){
+        if (p.exec && !e.boss) e.hp = 0;        /* 处决弹：直接清血 */
         hurtEnemy(e, p.dmg, p.crit);
         addParts(p.x, p.y, '#ffffff', 4, 60);
+        /* 扁鹊：落点范围 AOE + 中毒 */
+        if (p.aoe){
+          const R0 = p.aoe;
+          for (const e2 of enemies){
+            if (e2.dead) continue;
+            if (Math.abs(e2.x - p.x) < R0 + e2.w/2 &&
+                Math.abs((e2.y - e2.h/2) - p.y) < R0 + e2.h/2){
+              if (e2 !== e) hurtEnemy(e2, p.dmg, false);
+              if (p.poison){ e2.poisonT = 3.0; e2.poisonTick = 0.2; }
+            }
+          }
+          addParts(p.x, p.y, '#8cd94a', 16, 130);
+          rings.push({x: p.x, y: p.y, r: 4, max: R0, life: 0.3, all: 0.3, color: '#8cd94a'});
+        }
+        /* 裂空：命中时按暴击率比例分裂 */
+        if (P.critSplit && Math.random() < P.crit * P.critSplit){
+          for (let k = -1; k <= 1; k += 2){
+            const a2 = Math.atan2(p.vy, p.vx) + k * 0.55;
+            projs.push({x: p.x, y: p.y, vx: Math.cos(a2)*P.projSpeed, vy: Math.sin(a2)*P.projSpeed,
+              dmg: p.dmg * 0.6, crit: p.crit, life: 0.8, dead: false, chain: 0});
+          }
+        }
         /* 连锁闪电：弹向最近的另一个敌人 */
         if (p.chain > 0){
           let 目 = null, 最 = 190;
@@ -699,7 +978,12 @@ function update(dt){
             addParts(p.x, p.y, '#7fd4ff', 5, 90);
           }
         }
-        p.dead = true; break;
+        /* 贯穿：长弓主词条，子弹能穿过去继续打 */
+        const 已打 = p.hit || (p.hit = []);
+        if (p.pierce > 0 && !已打.includes(e)){
+          已打.push(e); p.pierce--;
+        } else p.dead = true;
+        break;
       }
     }
   }
@@ -718,7 +1002,7 @@ function update(dt){
       e.poisonTick -= dt;
       if (e.poisonTick <= 0){
         e.poisonTick = 0.2;
-        const 毒伤 = P.atk * (0.5 + 0.2 * (P.poison - 1));
+        const 毒伤 = P.atk * (0.5 + 0.2 * (Math.max(1, P.poison) - 1));
         e.hp -= 毒伤;
         P.dmgDealt += 毒伤;
         if (Math.random() < 0.25)
@@ -799,7 +1083,9 @@ function update(dt){
       dir = 0;                                     /* 蓄力：原地不动（闪烁预警）*/
     } else {
       sp *= (e.type === 'thief' ? 0.85 : 0.16);    /* 平时慢悠悠地挪 */
-      if (!e.boss){
+      /* 只有软体怪会冲撞：史莱姆 / 分裂体。
+         骷髅、盗贼、壮汉、首领都不冲 —— 不然前期太难受 */
+      if (!e.boss && (e.type === 'slime' || e.type === 'split')){
         e.cd2 -= dt;
         if (e.cd2 <= 0 && dist < 320){
           e.cd2 = 10 + rand(-1.5, 1.5);
@@ -1216,7 +1502,7 @@ function drawEnemy(e){
 const HUD = {
   hp: $('hpFill'), hpT: $('hpTxt'), xp: $('xpFill'), xpBar: $('xpBar'), hud: $('hud'),
   lv: $('hLv'), perk: $('hPerk'), pol: $('hPol'), polx: $('hPolX'),
-  wave: $('hWave'), time: $('hTime'), ann: $('ann'),
+  wave: $('hWave'), time: $('hTime'), ann: $('ann'), mainPk: $('hMainPk'),
 };
 function 设文(el, v){ if (el && el._v !== v){ el._v = v; el.textContent = v; } }
 function 设宽(el, r){
@@ -1248,6 +1534,9 @@ function syncHUD(){
   设文(HUD.time, Math.floor(timeAlive/60) + ':' + ('0' + Math.floor(timeAlive%60)).slice(-2)
                  + ' · 击杀 ' + P.kills);
   HUD.xpBar.classList.toggle('floor', (P.无升级秒 || 0) >= 60);
+  const 主 = P.主词条 ? 按id找词条(P.主词条) : null;
+  设文(HUD.mainPk, 主 ? '主词条 · ' + 主.n : '');
+  HUD.mainPk.classList.toggle('hide', !主);
   HUD.hud.classList.toggle('hide', state === 'start');
 }
 
