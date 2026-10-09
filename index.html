@@ -243,9 +243,10 @@ const PERKS = [
   {id:'mag',   n:'磁力', d:'拾取范围 +45%',    max:6, f:()=>P.magnet *= 1.45},
   {id:'thorn', n:'荆棘', d:'被撞反伤＝攻击力 ×110%（每层 +10%）', max:6, f:()=>P.thorns += 1},
   {id:'kb',    n:'重击', d:'击退 +18%',        max:6, f:()=>P.knockback *= 1.18},
-  {id:'frost', n:'冰霜', d:'减速 +13%，并有 10% 概率冻住敌人 2 秒（每层 +5%）', max:6,
+  {id:'frost', n:'冰霜', d:'减速 +13%，并有 10% 概率冻住敌人 2 秒（每层 +5%，内置 3 秒 CD）', max:6,
                f:()=>P.frost = Math.min(0.65, P.frost + 0.13)},
-  {id:'poison',n:'剧毒', d:'中毒，每秒 +5 伤害', max:6, f:()=>P.poison += 5},
+  {id:'poison',n:'剧毒', d:'中毒：每 0.2 秒造成攻击力 ×50% 伤害（每层 +20%）', max:6,
+               f:()=>P.poison += 1},
   {id:'shield',n:'护盾', d:'可再生的护盾（4 秒回一层）', max:6, f:()=>P.shieldMax += 1},
   {id:'berserk',n:'狂暴', d:'血量越低攻击越高（每层最多 +20%）', max:6, f:()=>P.berserk += 0.20},
 ];
@@ -437,14 +438,19 @@ function hurtEnemy(e, d, isCrit){
   if (P.lifesteal > 0) P.hp = Math.min(P.maxHp, P.hp + d * P.lifesteal);
   if (P.frost  > 0){
     e.slowT = 1.6;
-    /* 冻结：基础 10%，每层 +5%，冻住 2 秒（冻住期间不能攻击）*/
+    /* 冻结：基础 10%，每层 +5%，冻住 2 秒
+       内置 3 秒 CD —— 否则分裂/多重投射会把概率控变成永冻 */
     const 层 = P.inv.frost || 1;
-    if (Math.random() < 0.10 + 0.05 * (层 - 1)){
-      e.frozen = 2.0;
+    if ((e.freezeCd || 0) <= 0 && Math.random() < 0.10 + 0.05 * (层 - 1)){
+      e.frozen   = 2.0;
+      e.freezeCd = 3.0;
       addText(e.x, e.y - e.h - 12, '冻结', '#7fd4ff');
     }
   }
-  if (P.poison > 0) e.poisonT = 3.0;
+  if (P.poison > 0){
+    e.poisonT    = 3.0;
+    e.poisonTick = 0.2;
+  }
   if (e.kb !== undefined) e.kb = (e.x < P.x ? -1 : 1) * P.knockback;
   if (e.hp <= 0) killEnemy(e);
 }
@@ -553,6 +559,7 @@ function spawnEnemy(type, opts){
     lives: opts.lives || 0, gained: 0, ate: 0, ateCycle: 0, settle: 5, stolen: 0,
     ult: 0, ultCd: rand(7, 11),
     cd2: rand(1.5, 9.5), wind: 0, charging: 0, chargeDir: 1, frozen: 0, orbHit: 0,
+    freezeCd: 0, poisonTick: 0.2,
     act: -1, actCd: 1.2, aoe: 0,
   });
 }
@@ -704,9 +711,19 @@ function update(dt){
     if (e.slowT  > 0) e.slowT  -= dt;
     if (e.hitT   > 0) e.hitT   -= dt;
     if (e.orbHit  > 0) e.orbHit  -= dt;
+    if (e.freezeCd > 0) e.freezeCd -= dt;
     if (e.poisonT > 0){
       e.poisonT -= dt;
-      e.hp -= P.poison * dt;
+      /* 每 0.2 秒跳一次：伤害 = 攻击力 × (50% + 20% × (层数-1)) */
+      e.poisonTick -= dt;
+      if (e.poisonTick <= 0){
+        e.poisonTick = 0.2;
+        const 毒伤 = P.atk * (0.5 + 0.2 * (P.poison - 1));
+        e.hp -= 毒伤;
+        P.dmgDealt += 毒伤;
+        if (Math.random() < 0.25)
+          addText(e.x + rand(-3,3), e.y - e.h - 4, Math.round(毒伤) + '', '#8cd94a');
+      }
       if (e.poisonT <= 0) e.poisonT = 0;
       if (Math.random() < dt*4) addParts(e.x, e.y - e.h/2, '#8cd94a', 1, 25);
       if (e.hp <= 0){ killEnemy(e); continue; }
