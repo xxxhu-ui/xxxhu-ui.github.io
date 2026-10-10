@@ -211,6 +211,8 @@
     打死大幽魂有<b>奖励</b>：50% 让所有怪经验 +50%，50% 让所有怪金币 +75%（都能叠加）<br>
     19 级之后，每打死一只大幽魂会开一次<b>幽魂商店</b>，花金币买词条<br>
     <b style="color:#7fd4ff">迅捷</b> 做主词条 = 二段跳；再抽到 <b>迅捷·续</b> 就能在二段跳落地时砸一圈（范围和天崩地裂一样）<br>
+    <b style="color:#ff8a3c">烈焰</b> = 和中毒同一套模板的持续灼烧，两个可以同时生效<br>
+    <b style="color:#7fffd4">不屈 / 狂血</b> = 单次受到的伤害封顶（200→150→100），12 秒内置 CD<br>
     <b style="color:#ffd94a">金币</b> = 怪死后掉的金色圆片，商店里花（19 级后每打死一只大幽魂开一次）<br>
     右上角一直显示<b>算完的最终属性</b>：攻击 / 弹数 / 攻速 / 暴击 / 暴伤 / DPS / 射程 / 复活次数<br>
     <b style="color:#ffd94a">黄帽窃贼</b> = 抢你经验球，抢满 5 秒就换一条命
@@ -315,14 +317,22 @@ const PERKS = [
   {id:'proj',  n:'分裂', d:'投射物 +1（弹道自动收拢）', max:6, f:()=>P.projCount += 1},
   {id:'range', n:'长弓', d:'射程 +4%',         max:6, f:()=>P.range *= 1.04},
   {id:'xp',    n:'贪婪', d:'经验获取 +30%',    max:6, f:()=>P.xpGain += 0.30},
-  {id:'thorn', n:'荆棘', d:'被撞反伤＝攻击力 ×110%（每层 +10%）', max:6, f:()=>P.thorns += 1},
+  /* 「荆棘」已删除 —— 它的反伤并入了「狂暴」（见下方 berserk）*/
+  {id:'flame', n:'烈焰', d:'灼烧：每 0.2 秒造成攻击力 ×50% 伤害（每层 +20%），可以和中毒同时生效', max:6,
+               f:()=>P.flame += 1},
   {id:'kb',    n:'重击', d:'击退 +18%',        max:6, f:()=>P.knockback *= 1.18},
   {id:'frost', n:'冰霜', d:'减速 +8%，并有 10% 概率冻住敌人 2 秒（每层 +5%，内置 3 秒 CD）', max:6,
                f:()=>P.frost = Math.min(0.48, P.frost + 0.08)},
   {id:'poison',n:'剧毒', d:'中毒：每 0.2 秒造成攻击力 ×50% 伤害（每层 +20%）', max:6,
                f:()=>P.poison += 1},
   {id:'shield',n:'护盾', d:'可再生的护盾（4 秒回一层）', max:6, f:()=>P.shieldMax += 1},
-  {id:'berserk',n:'狂暴', d:'血量越低攻击越高（每层最多 +20%）', max:6, f:()=>P.berserk += 0.20},
+  /* 「狂暴」= 原来的狂暴 + 删掉的荆棘。
+     攻击力改成「台阶式」：生命每低 30% 上一个台阶（最多 3 阶），
+     老公式按缺失血量线性给，6 层满配残血也才 +120%，没人愿意点。
+     新公式：倍率 = 1 + 阶数 × (0.20 + 0.12 × 层数)
+             6 层 · 压到 10% 血 · 3 阶 → ×3.76 */
+  {id:'berserk',n:'狂暴', d:'生命每低 30% 攻击 +1 个台阶（最多 3 阶），并且被撞时反伤', max:6,
+               f:()=>{P.berserk += 0.20; P.thorns += 1;}},
 ];
 
 /* ══════════ 主词条解锁的「进阶词条」（k:1 = 卡面是青色，50% 概率出现）══════════ */
@@ -353,6 +363,18 @@ const UNLOCK = [
   {id:'ice',    n:'寒冰', k:1, max:6,
    d:'每 10 秒降下一颗寒冰，冻住最近的怪 10 秒；每层 CD −1 秒（最少 5 秒）',
    f:()=>P.ice = (P.ice || 0) + 1},
+  {id:'firelance', n:'火烈弹', k:1, max:6,
+   d:'每 1 秒投掷一枚火烈弹，命中造成「目标最大生命 0.5%」的伤害；每层 +0.2%（最高 1.5%）',
+   f:()=>P.火烈弹 = (P.火烈弹 || 0) + 1},
+  {id:'unbend', n:'不屈', k:1, max:3,
+   d:'单次受到的伤害不会超过 200 / 150 / 100 点；触发后进入 12 秒内置 CD',
+   f:()=>P.不屈 = (P.不屈 || 0) + 1},
+  {id:'bloodrage', n:'狂血', k:1, max:3,
+   d:'单次伤害上限 200 / 150 / 100，并且残血（低于 35%）时每秒回复 1% 最大生命；12 秒内置 CD',
+   f:()=>P.狂血 = (P.狂血 || 0) + 1},
+  {id:'stun', n:'震晕', k:1, max:6,
+   d:'主角子弹命中时眩晕敌人 2 秒；内置 CD 8 秒，每层 −1 秒（最少 2 秒）。首领免疫',
+   f:()=>P.震晕 = (P.震晕 || 0) + 1},
   {id:'jumpaoe', n:'迅捷·续', k:1, max:8,
    d:'「二段跳」之后落地时砸出冲击波：范围与「天崩地裂」完全相同，'
    + '伤害 = 攻击力 ×150%，每层 +30%（最高 360%）；可以和「天崩地裂」同时触发',
@@ -361,7 +383,8 @@ const UNLOCK = [
 const 解锁表 = {
   atk:['atkpct'], aspd:['aspd2'], crit:['critsplit'], cdmg:['snipe'],
   hp:['hpup'], ls:['execute'], proj:['splitp'], poison:['bianque'], frost:['ice'],
-  move:['jumpaoe'], range:[], xp:[], regen:[],
+  move:['jumpaoe'], range:[], xp:[],
+  regen:['unbend'], berserk:['bloodrage'], kb:['stun'], flame:['firelance'], shield:[],
 };
 /* 主词条本身的效果（不是可选词条的那种）*/
 function 应用主词条(id){
@@ -369,6 +392,8 @@ function 应用主词条(id){
   if (id === 'range') P.贯穿 = 3;                                    /* 长弓 → 子弹贯穿 */
   if (id === 'xp'){  P.xpGain += 3; P.已删词条.push('xp'); }          /* 贪婪 → 经验 +300% 并删除 */
   if (id === 'hp'){  P.已删词条.push('hp'); }                        /* 铁壁 → 删除（效果保留）*/
+  if (id === 'shield'){ P.dr = Math.min(0.75, P.dr + 0.30); P.碎盾爆 = 1; }   /* 护盾 → 白送 30% 减伤 + 碎盾冲击波 */
+  if (id === 'shield') 播报('主词条 · 护盾　白送 30% 减伤');
 }
 
 /* ══════════ 19 级：主词条 ＋ 第二词条 ＝ 合成武器 ══════════
@@ -498,7 +523,8 @@ function 记一笔(id){ P.选序.push(id); }
 function 主词条候选(){
   const 统计 = {};
   P.选序.forEach((id, i) => { (统计[id] = 统计[id] || []).push(i); });
-  const 允许 = ['atk','aspd','crit','cdmg','hp','ls','move','range','proj','poison','xp','frost'];
+  const 允许 = ['atk','aspd','crit','cdmg','hp','ls','move','range','proj','poison','xp','frost',
+                'regen','berserk','kb','flame','shield'];
   return Object.keys(统计)
     .filter(id => 允许.includes(id))                  /* 只有这 12 个能做主词条 */
     .map(id => ({ id, n: 统计[id].length, 到: 统计[id][统计[id].length - 1] }))
@@ -560,6 +586,8 @@ function reset(){
     基攻: 7, atkPct: 0, 主词条: null, 主卡池: [], 已删词条: [], 已选唯一: null,
     选序: [], 复活次数: 0, 二段跳: 0, 跳数: 0, 贯穿: 0, 金币: 0,
     魂经验: 0, 魂金币: 0, 商店待开: 0, 商店主词条: [], 跳跃AOE: 0,
+    flame: 0, 火烈弹: 0, 火烈Cd: 1, 不屈: 0, 狂血: 0, 震晕: 0,
+    限伤CD: 0, 晕CD: 0, 碎盾爆: 0, 狂暴阶: 0,
     hpup: 0, snipeCd: 0, execCd: 0, bianCd: 0, iceCd: 0, critSplit: 0, splitp: 0,
     snipe: 0, execute: 0, bianque: 0, ice: 0, 跳锁: 0,
     武器: null, 武器Cd: 0, 主词条2: null, 连击目标: null, 连击层: 0,
@@ -645,6 +673,13 @@ function 死神枪落(x){
 }
 /* 迅捷·续：二段跳之后落地，攻击力 ×(150% + 30%×额外层数)，最高 360% */
 function 跳砸倍率(){ return Math.min(3.6, 1.5 + 0.3 * (Math.max(1, P.跳跃AOE || 1) - 1)); }
+/* 碎盾冲击波：伤害模板直接抄「二段跳」，只换配色（护盾 6 层 → 300%）*/
+function 碎盾倍率(){ return Math.min(3.6, 1.5 + 0.3 * (Math.max(1, P.shieldMax || 1) - 1)); }
+function 碎盾波(){
+  冲击波(P.atk * 碎盾倍率(), '#7fd4ff', '#ffffff', 7);
+  addText(P.x, P.y - 46, '碎 盾 · ' + Math.round(碎盾倍率() * 100) + '%', '#7fd4ff');
+  呼(0.30, 0.06, 1800, 300);
+}
 function 跳砸波(){
   冲击波(P.atk * 跳砸倍率(), '#7fd4ff', '#cfefff', 7);
   addText(P.x, P.y - 46, '二段跳 · 砸地 ' + Math.round(跳砸倍率() * 100) + '%', '#7fd4ff');
@@ -712,6 +747,7 @@ function 开主词条选择(){
       : (c.id === 'range' ? '解锁：子弹贯穿'
        : c.id === 'xp'    ? '解锁：经验获取 +300%，并删除「贪婪」'
        : c.id === 'hp'    ? '删除「铁壁」，不会再被抽到'
+       : c.id === 'shield'? '白送 30% 减伤 ＋ 盾碎时砸出冲击波（范围和伤害同二段跳）'
        : '（没有新词条）');
     const b = document.createElement('button');
     b.className = 'card main';
@@ -1037,6 +1073,19 @@ function hurtEnemy(e, d, isCrit){
     e.poisonT    = 3.0;
     e.poisonTick = 0.2;
   }
+  if (P.flame > 0){                    /* 烈焰：和中毒各自独立的计时器，可以同时生效 */
+    e.flameT    = 3.0;
+    e.flameTick = 0.2;
+  }
+  /* 震晕：子弹命中眩晕 2 秒，内置 CD（首领免疫，否则无相会被永久锁死）*/
+  if (P.震晕 && (P.晕CD || 0) <= 0 && !e.boss){
+    P.晕CD = Math.max(2, 8 - P.震晕);
+    e.frozen = 2.0;
+    e.震晕 = 1;
+    addText(e.x, e.y - e.h - 12, '眩晕', '#ffe066');
+    addParts(e.x, e.y - e.h/2, '#ffe066', 16, 140);
+    呼(0.10, 0.04, 1400, 500);
+  }
   if (e.kb !== undefined) e.kb = (e.x < P.x ? -1 : 1) * P.knockback;
   if (e.hp <= 0) killEnemy(e);
 }
@@ -1187,10 +1236,28 @@ function killEnemy(e){
 function damagePlayer(d){
   if (P.iframe > 0 || state !== 'play') return;
   if (P.dr) d = d * (1 - P.dr);
+  /* ══ 限伤（不屈 / 狂血）══
+     取两者里层数更高的那一档：200 / 150 / 100。
+     ⚠ 必须有 12 秒内置 CD —— 游戏里有 0.7 秒受击无敌帧，
+     等于受伤频率被锁在 1.4 次/秒；不给 CD 的话 1.4 × 100 = 140 DPS，
+     后期怪单次能打 400+，你会变成永久不死身。*/
+  const 限层 = Math.max(P.不屈 || 0, P.狂血 || 0);
+  if (限层 > 0 && (P.限伤CD || 0) <= 0){
+    const 上限 = [200, 150, 100][限层 - 1];
+    if (d > 上限){
+      d = 上限;
+      P.限伤CD = 12;
+      addText(P.x, P.y - 46, '限 伤 ' + 上限, '#7fffd4');
+      addParts(P.x, P.y - 9, '#7fffd4', 22, 150);
+      呼(0.16, 0.055, 900, 300);
+    }
+  }
   if (P.shield > 0){
     P.shield--; P.iframe = 0.5; shake = Math.max(shake, 3);
     addText(P.x, P.y - 30, '格挡', '#7fd4ff');
     addParts(P.x, P.y - 9, '#7fd4ff', 10, 80);
+    /* 盾被彻底打空 → 碎盾冲击波（主词条「护盾」的专属）*/
+    if (P.碎盾爆 && P.shield <= 0) 碎盾波();
     return;
   }
   P.hp -= d;
@@ -1295,6 +1362,7 @@ function spawnEnemy(type, opts){
     形: 0, 形时: 0, 盾: 0, 盾max: 0, 连冲: 0, 蓄: 0, 转场: 0, 残影: [], 子眼计时: 3,
     寿命: t === 'eye' ? 13 : 0,
     俯冲: 0, 僵直: 0, dvx: 0, dvy: 0, 尾: [], 幻Cd: rand(2, 4),
+    flameT: 0, flameTick: 0.2, 震晕: 0,
   });
 }
 
@@ -1570,6 +1638,26 @@ function update(dt){
 
   /* ---- 主词条解锁的进阶效果 ---- */
   if (P.幽魂冷却 > 0) P.幽魂冷却 -= dt;      /* 大幽魂聚合冷却：至少隔 2 波 */
+  if (P.限伤CD > 0) P.限伤CD -= dt;
+  if (P.晕CD  > 0) P.晕CD  -= dt;
+  /* 狂血：残血时每秒回 1% 最大生命（每层）—— 让你敢长期待在低血量区间 */
+  if (P.狂血 && P.hp / P.maxHp < 0.35)
+    P.hp = Math.min(P.maxHp, P.hp + P.maxHp * 0.01 * P.狂血 * dt);
+  /* 火烈弹：每 1 秒投一枚，按「目标最大生命百分比」结算，后期也不会过时 */
+  if (P.火烈弹){
+    P.火烈Cd = (P.火烈Cd === undefined ? 1 : P.火烈Cd) - dt;
+    if (P.火烈Cd <= 0){
+      P.火烈Cd = 1;
+      const 目 = nearestEnemy();
+      if (目){
+        const a = Math.atan2((目.y - 目.h/2) - (P.y - 9), 目.x - P.x);
+        projs.push({x: P.x, y: P.y - 9, vx: Math.cos(a)*300, vy: Math.sin(a)*300,
+          dmg: 1, crit: false, life: 1.6, dead: false, sx: P.x, big: 1,
+          比伤: 0.005 + 0.002 * (P.火烈弹 - 1)});
+        addParts(P.x, P.y - 9, '#ff8a3c', 8, 110);
+      }
+    }
+  }
   /* 死神之枪：每 10 秒降一柄 */
   if (P.死神枪){
     P.死枪Cd = (P.死枪Cd === undefined ? 8 : P.死枪Cd) - dt;
@@ -1656,7 +1744,11 @@ function update(dt){
         parts.push({x: P.x + P.facing * 9, y: P.y - 9 + rand(-3, 3),
           vx: P.facing * rand(70, 130), vy: rand(-16, 16),
           life: 0.10, max: 0.10, color: '#9fe8ff', s: 1});
-      const dmg = P.atk * (P.berserk ? (1 + (1 - P.hp/P.maxHp) * P.berserk) : 1);
+      /* 狂暴：生命每低 30% 一个台阶（最多 3 阶）*/
+      const 暴层 = Math.round((P.berserk || 0) / 0.20);
+      const 暴阶 = 暴层 > 0 ? Math.min(3, Math.floor((1 - P.hp / P.maxHp) / 0.30)) : 0;
+      P.狂暴阶 = 暴阶;
+      const dmg = P.atk * (1 + 暴阶 * (0.20 + 0.12 * 暴层));
       const isCrit = Math.random() < P.crit;
       /* 一发子弹的伤害；暴击整组共用一次判定 */
       const 弹伤 = dmg * (isCrit ? P.critDmg : 1);
@@ -1773,6 +1865,7 @@ function update(dt){
           addText(e.x, e.y - e.h - 18, '引爆 ' + Math.round(毒), '#8cd94a');
           addParts(e.x, e.y - e.h/2, '#8cd94a', 20, 150);
         }
+        if (p.比伤) 本次 = Math.max(1, e.maxHp * p.比伤);   /* 火烈弹：按目标最大生命百分比 */
         hurtEnemy(e, 本次, p.crit);
         if (p.裂){                                   /* 裂空枪：命中后裂成 3 颗 */
           for (let k = -1; k <= 1; k++){
@@ -1865,6 +1958,25 @@ function update(dt){
       }
       if (e.poisonT <= 0) e.poisonT = 0;
       if (Math.random() < dt*4) addParts(e.x, e.y - e.h/2, '#8cd94a', 1, 25);
+      if (e.hp <= 0){ killEnemy(e); continue; }
+    }
+    /* 烈焰：和中毒一模一样的模板，只是换了个色调，两者可以同时跳 */
+    if (e.flameT > 0){
+      e.flameT -= dt;
+      e.flameTick -= dt;
+      if (e.flameTick <= 0){
+        e.flameTick = 0.2;
+        const 火伤 = P.atk * (0.5 + 0.2 * (Math.max(1, P.flame) - 1));
+        if (无形(e)){ e.flameT = 0; }
+        else {
+          e.hp -= 火伤;
+          P.dmgDealt += 火伤;
+          if (Math.random() < 0.25)
+            addText(e.x + rand(-3,3), e.y - e.h - 4, Math.round(火伤) + '', '#ff8a3c');
+        }
+      }
+      if (e.flameT <= 0) e.flameT = 0;
+      if (Math.random() < dt*4) addParts(e.x, e.y - e.h/2, '#ff8a3c', 1, 28);
       if (e.hp <= 0){ killEnemy(e); continue; }
     }
 
@@ -2720,7 +2832,7 @@ function drawEnemy(e){
   /* 冻结：整体闪蓝 */
   if (e.frozen > 0){
     ctx.globalAlpha = 0.55;
-    px(l, y - h, e.w, h, '#7fd4ff');
+    px(l, y - h, e.w, h, e.震晕 ? '#ffe066' : '#7fd4ff');   /* 眩晕=亮黄，冰霜=蓝 */
     ctx.globalAlpha = 1;
   }
   /* 蓄力预警：闪红 + 头顶一道预判线 */
@@ -2834,9 +2946,15 @@ function syncHUD(){
   if (P.shieldMax) 附.push('盾 ' + P.shield + '/' + P.shieldMax);
   if (P.lifesteal) 附.push('吸 ' + Math.round(P.lifesteal * 100) + '%');
   if (P.dr)        附.push('减伤 ' + Math.round(P.dr * 100) + '%');
-  if (P.thorns)    附.push('荆棘 ' + P.thorns);
+  if (P.thorns)    附.push('反伤 ' + P.thorns);
   if (P.poison)    附.push('毒 ' + P.poison);
+  if (P.flame)     附.push('火 ' + P.flame);
   if (P.frost)     附.push('冰 ' + Math.round(P.frost * 100) + '%');
+  if (P.狂暴阶)    附.push('狂暴 ' + P.狂暴阶 + '阶');
+  if (P.不屈)      附.push('不屈 ' + P.不屈);
+  if (P.狂血)      附.push('狂血 ' + P.狂血);
+  if (P.震晕)      附.push('震晕 ' + P.震晕);
+  if (P.火烈弹)    附.push('火烈弹 ' + P.火烈弹);
   设文(HUD.stExtra, 附.join('　'));
   HUD.mainPk.classList.toggle('hide', !主);
   HUD.hud.classList.toggle('hide', state === 'start');
@@ -2899,7 +3017,8 @@ function render(){
       px(p.x - p.vx / 速0 * 7 - 1, p.y - p.vy / 速0 * 7 - 1, 3, 3, p.crit ? '#ffe066' : '#9fe8ff');
       ctx.globalAlpha = 1;
     }
-    px(p.x - 2, p.y - 2, 4, 4, p.crit ? '#ffe066' : '#9fe8ff');
+    px(p.x - 2, p.y - 2, 4, 4,
+       p.比伤 ? '#ff8a3c' : (p.crit ? '#ffe066' : '#9fe8ff'));
   }
   for (const p of eprojs){
     if (p.白){
