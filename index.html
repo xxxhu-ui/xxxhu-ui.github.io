@@ -406,6 +406,11 @@ const 武器伙伴 = {
   frost:['range','poison','atk'], poison:['frost','ls','aspd'],
   ls:['poison','hp','proj'],   hp:['ls','move','crit'],
   move:['hp','xp','cdmg'],     xp:['move','atk','range'],
+  /* ── 下面这 5 行是新增的：只有拿「烈焰 / 再生 / 狂暴 / 重击 / 护盾」当主词条时，
+        这些组合才会出现在 19 级的选枪界面里。原来的 12 个主词条一把都没改。── */
+  flame:['poison','atk','crit'], regen:['shield','hp','ls'],
+  berserk:['kb','cdmg','hp'],    kb:['flame','move','proj'],
+  shield:['hp','kb','move'],
 };
 function 武器键(a, b){ return [a, b].sort().join('|'); }
 /* ── 合成武器的伤害基准 ─────────────────────────────────────────
@@ -418,9 +423,75 @@ function 武器键(a, b){ return [a, b].sort().join('|'); }
        武器 DPS = 玩家DPS() × K × 发数 ÷ cd
    取 K ≈ 0.30 × cd ÷ 发数 → 武器总输出约为玩家的 30%（枪是副手，不抢主角）。
    有特殊机制的（连击 / 必暴 / 裂空 / 穿透 / 多段命中）再单独调低。*/
+/* 全局武器强度：33 把枪的 K 都按「实测占比」标定过，这个系数是整体微调用的。
+   19 级之后枪还会给主角加增幅，那会把主角自己的伤害抬高、从而压低枪的占比 ——
+   改这一个数就能把所有枪一起校准，不用去动 33 个 K。*/
+const 武器强度 = 1.5;
 function 武器伤(K){
   const 暴倍 = 1 + P.crit * (P.critDmg - 1);
-  return Math.max(1, (玩家DPS() / 暴倍) * K);
+  return Math.max(1, (玩家DPS() / 暴倍) * K * 武器强度);
+}
+
+/* ══════════ 合成武器给「主角」的增幅 ══════════
+   19 级选完枪之后，枪不只是多一个输出点 —— 它会改造主角自己的弹幕。
+   这样这次选择才真的是在选「流派」，而不是在选背后的主词条。
+   每把枪对应一组数值，全部作用在主角身上（见 刷新增幅）。*/
+const 增幅 = {};
+let 增幅武器 = null;
+function 重设增幅(){
+  增幅.攻速 = 1; 增幅.伤害 = 1; 增幅.冰伤 = 1;   /* 乘算的默认 1 */
+  增幅.暴伤 = 0; 增幅.弹数 = 0; 增幅.穿透 = 0; 增幅.穿伤 = 0; 增幅.距伤 = 0;
+  增幅.移攻速 = 0; 增幅.跑伤 = 0; 增幅.残血攻 = 0; 增幅.有盾增伤 = 0;
+  增幅.减伤 = 0; 增幅.移速 = 0; 增幅.吸血加 = 0; 增幅.护盾快 = 0; 增幅.击退 = 0;
+  增幅.击杀回盾 = 0; 增幅.击杀回血 = 0; 增幅.毒转血 = 0; 增幅.毒雾 = 0;
+  增幅.点燃 = 0; 增幅.灼烧延长 = 0; 增幅.毒火增伤 = 0; 增幅.掉球 = 0;
+  增幅.经验攻 = 0; 增幅.冰圈 = 0; 增幅.引爆 = 0; 增幅.裂 = 0; 增幅.残影 = 0;
+}
+重设增幅();   /* ⚠ 开机必须先填一遍默认值。
+                 否则「P.武器 === 增幅武器」在两边都是 null 时成立，
+                 直接返回空对象 —— 那会让 弹数 变成 NaN（一颗子弹都打不出来）、
+                 暴伤 变成 NaN（把怪的血打成 NaN 永远打不死）。*/
+function 刷新增幅(){
+  if (P.武器 === 增幅武器) return 增幅;      /* 只在换枪时重算，之后就是读缓存 */
+  增幅武器 = P.武器;
+  重设增幅();
+  switch (P.武器){
+    case 'aspd|atk':    增幅.攻速 = 1.40; break;                        /* 连锋枪 → 主角连射 */
+    case 'aspd|proj':   增幅.弹数 = 1; break;                           /* 蜂群枪 → 主角 +1 发 */
+    case 'crit|proj':   增幅.裂 = 0.35; break;                          /* 裂空枪 → 主角子弹分裂 */
+    case 'cdmg|crit':   增幅.暴伤 = 0.80; break;                        /* 斩首枪 → 暴伤 */
+    case 'cdmg|range':  增幅.距伤 = 0.12; 增幅.穿透 = 99; break;         /* 狙击枪 → 远距增伤 */
+    case 'frost|range': 增幅.冰圈 = 1; 增幅.冰伤 = 1.25; break;          /* 霜矢枪 → 命中留冰圈 */
+    case 'frost|poison':增幅.引爆 = 1; 增幅.毒转血 = 0.20; break;        /* 霜蚀枪 → 打冰引爆 */
+    case 'ls|poison':   增幅.毒转血 = 0.30; 增幅.点燃 = 1; break;        /* 蚀血枪 → 毒转血 */
+    case 'hp|ls':       增幅.残血攻 = 0.60; break;                      /* 血偿枪 → 残血增伤 */
+    case 'hp|move':     增幅.跑伤 = 0.35; break;                        /* 冲撞枪 → 跑动增伤 */
+    case 'move|xp':     增幅.掉球 = 1; break;                           /* 拾荒枪 → 必掉经验球 */
+    case 'atk|xp':      增幅.经验攻 = 1; break;                         /* 铸币枪 → 随总经验增伤 */
+    case 'atk|frost':   增幅.冰伤 = 1.80; break;                        /* 碎冰枪 → 打冰加倍 */
+    case 'aspd|poison': 增幅.毒雾 = 1; 增幅.攻速 = 1.20; break;          /* 瘴气枪 → 主角子弹留毒雾 */
+    case 'ls|proj':     增幅.击杀回血 = 1; break;                       /* 吸髓枪 → 击杀回血 */
+    case 'crit|hp':     增幅.有盾增伤 = 0.25; 增幅.护盾快 = 1; break;     /* 坚壁枪 → 有盾增伤 */
+    case 'cdmg|move':   增幅.残影 = 1; break;                           /* 残影枪 → 双位置开火 */
+    case 'range|xp':    增幅.穿透 = 3; 增幅.穿伤 = 0.25; break;          /* 淘金枪 → 穿透递增 */
+    /* ── 15 把新枪 ── */
+    case 'atk|flame':   增幅.点燃 = 1; 增幅.灼烧延长 = 1; break;
+    case 'crit|flame':  增幅.引爆 = 1; 增幅.点燃 = 1; break;
+    case 'flame|poison':增幅.毒火增伤 = 0.35; break;
+    case 'hp|regen':    增幅.残血攻 = 0.50; break;
+    case 'ls|regen':    增幅.吸血加 = 0.08; break;
+    case 'regen|shield':增幅.击杀回盾 = 1; break;
+    case 'berserk|hp':  增幅.减伤 = 0.12; break;
+    case 'berserk|kb':  增幅.穿透 = 2; break;
+    case 'berserk|cdmg':增幅.暴伤 = 0.80; break;
+    case 'flame|kb':    增幅.点燃 = 1; 增幅.灼烧延长 = 1; break;
+    case 'kb|move':     增幅.跑伤 = 0.25; 增幅.击退 = 1; break;
+    case 'kb|proj':     增幅.弹数 = 1; 增幅.击退 = 1; break;
+    case 'hp|shield':   增幅.护盾快 = 1.5; break;
+    case 'kb|shield':   增幅.有盾增伤 = 0.30; break;
+    case 'move|shield': 增幅.移速 = 0.18; break;
+  }
+  return 增幅;
 }
 
 const 武器表 = {
@@ -464,6 +535,38 @@ const 武器表 = {
    d:'子弹从你 1 秒前所在的位置打出去'},
  'range|xp':   {n:'淘金枪', cd:1.20, 数:1, 速:1.2,  穿:4, 穿伤:0.30, 掉球:1, 伤:P=>武器伤(0.195),
    d:'子弹每穿透一只怪伤害 +30%；命中的怪死后多掉一颗经验球'},
+ /* ══════ 新主词条的 15 把枪（K 统一按「实测占比 35%」标定）══════ */
+ 'atk|flame':    {n:'炎锋枪', cd:0.90, 数:1, 速:1.15, 伤:P=>武器伤(0.45),
+   d:'灼烧叠得更狠；主角的灼烧持续时间也变长'},
+ 'crit|flame':   {n:'爆燃枪', cd:1.40, 数:1, 速:1.1,  伤:P=>武器伤(0.70), 必暴:1,
+   d:'必定暴击；主角暴击时会把目标身上的灼烧一次性引爆'},
+ 'flame|poison': {n:'炙毒枪', cd:1.30, 数:1, 速:1,    伤:P=>武器伤(0.65),
+   d:'毒与火同时结算时伤害暴涨；主角对「又中毒又灼烧」的敌人额外增伤'},
+ 'hp|regen':     {n:'血肉枪', cd:1.20, 数:1, 速:1,    代价:0.03,
+   伤:P=>武器伤(0.60 + Math.min(0.60, (1 - P.hp / P.maxHp))),
+   d:'开火扣 3% 最大生命；主角攻击力随已损失生命提升（最多 +50%）'},
+ 'ls|regen':     {n:'汲取枪', cd:1.50, 数:1, 速:1,    伤:P=>武器伤(0.75), 吸血:1,
+   d:'吸血极强；主角永久获得额外吸血'},
+ 'regen|shield': {n:'回盾枪', cd:1.40, 数:1, 速:1,    伤:P=>武器伤(0.70), 回盾:1,
+   d:'命中回复护盾；主角每次击杀也会补一层盾'},
+ 'berserk|hp':   {n:'狂躯枪', cd:1.20, 数:1, 速:1,    伤:P=>武器伤(0.60),
+   d:'主角受到的伤害降低 12%'},
+ 'berserk|kb':   {n:'碎骨枪', cd:1.60, 数:1, 速:1.1,  伤:P=>武器伤(0.80),
+   d:'极强的击退；主角子弹额外 +2 穿透'},
+ 'berserk|cdmg': {n:'血怒枪', cd:1.30, 数:1, 速:1.1,  伤:P=>武器伤(0.65), 必暴:1,
+   d:'必定暴击；主角暴击伤害 +80%'},
+ 'flame|kb':     {n:'轰炎枪', cd:1.50, 数:1, 速:1,    伤:P=>武器伤(0.75), 击退附加:1,
+   d:'击退时炸出一片火；主角的子弹命中也会点燃敌人'},
+ 'kb|move':      {n:'疾冲枪', cd:1.00, 数:1, 速:1.3,  伤:P=>武器伤(0.50), 跟向:1,
+   d:'朝移动方向发射；主角跑动时伤害 +25%、击退翻倍'},
+ 'kb|proj':      {n:'霰弹枪', cd:1.30, 数:4, 速:1, 散像素:5, 伤:P=>武器伤(0.1625),
+   d:'一次喷 4 颗；主角弹数 +1、击退大幅提升'},
+ 'hp|shield':    {n:'壁垒枪', cd:1.30, 数:1, 速:1.1,  伤:P=>武器伤(0.65), 回盾:1,
+   d:'主角护盾回充速度大幅加快'},
+ 'kb|shield':    {n:'重锤枪', cd:1.80, 数:1, 速:0.9,  伤:P=>武器伤(0.90), 穿:4,
+   d:'极重的一击；主角有护盾时伤害 +30%'},
+ 'move|shield':  {n:'追风枪', cd:1.10, 数:1, 速:1.2,  伤:P=>武器伤(0.55),
+   d:'主角移动速度 +18%'},
 };
 
 /* ══════════ 30 级「唯一词条」：每种只能拿一次，出现时是金卡 ══════════ */
@@ -587,7 +690,7 @@ function reset(){
     选序: [], 复活次数: 0, 二段跳: 0, 跳数: 0, 贯穿: 0, 金币: 0,
     魂经验: 0, 魂金币: 0, 商店待开: 0, 商店主词条: [], 跳跃AOE: 0,
     flame: 0, 火烈弹: 0, 火烈Cd: 1, 不屈: 0, 狂血: 0, 震晕: 0,
-    限伤CD: 0, 晕CD: 0, 碎盾爆: 0, 狂暴阶: 0,
+    限伤CD: 0, 晕CD: 0, 碎盾爆: 0, 碎盾CD: 0, 狂暴阶: 0,
     hpup: 0, snipeCd: 0, execCd: 0, bianCd: 0, iceCd: 0, critSplit: 0, splitp: 0,
     snipe: 0, execute: 0, bianque: 0, ice: 0, 跳锁: 0,
     武器: null, 武器Cd: 0, 主词条2: null, 连击目标: null, 连击层: 0,
@@ -747,7 +850,7 @@ function 开主词条选择(){
       : (c.id === 'range' ? '解锁：子弹贯穿'
        : c.id === 'xp'    ? '解锁：经验获取 +300%，并删除「贪婪」'
        : c.id === 'hp'    ? '删除「铁壁」，不会再被抽到'
-       : c.id === 'shield'? '白送 30% 减伤 ＋ 盾碎时砸出冲击波（范围和伤害同二段跳）'
+       : c.id === 'shield'? '白送 30% 减伤 ＋ 每击碎一层盾就砸出冲击波（5 秒 CD，范围和伤害同二段跳）'
        : '（没有新词条）');
     const b = document.createElement('button');
     b.className = 'card main';
@@ -1057,7 +1160,8 @@ function hurtEnemy(e, d, isCrit){
   }
   addText(e.x + rand(-3,3), e.y - e.h - 4, Math.round(d) + (isCrit ? '!' : ''),
           isCrit ? '#ffe066' : '#ffffff');
-  if (P.lifesteal > 0) P.hp = Math.min(P.maxHp, P.hp + d * P.lifesteal);
+  const 吸血总 = P.lifesteal + 刷新增幅().吸血加;
+  if (吸血总 > 0) P.hp = Math.min(P.maxHp, P.hp + d * 吸血总);
   if (P.frost  > 0){
     e.slowT = 1.6;
     /* 冻结：基础 10%，每层 +5%，冻住 2 秒
@@ -1086,7 +1190,7 @@ function hurtEnemy(e, d, isCrit){
     addParts(e.x, e.y - e.h/2, '#ffe066', 16, 140);
     呼(0.10, 0.04, 1400, 500);
   }
-  if (e.kb !== undefined) e.kb = (e.x < P.x ? -1 : 1) * P.knockback;
+  if (e.kb !== undefined) e.kb = (e.x < P.x ? -1 : 1) * P.knockback * (1 + 刷新增幅().击退);
   if (e.hp <= 0) killEnemy(e);
 }
 function killEnemy(e){
@@ -1151,6 +1255,9 @@ function killEnemy(e){
   e.dead = true;
   P.kills++;
   addParts(e.x, e.y - e.h/2, e.c1, 12, 110);
+  { const 增K = 刷新增幅();
+    if (增K.击杀回盾 && P.shieldMax > 0) P.shield = Math.min(P.shieldMax, P.shield + 1);
+    if (增K.击杀回血) P.hp = Math.min(P.maxHp, P.hp + P.maxHp * 0.015); }
   if (timeAlive - 上次死亡声 > 0.09){
     上次死亡声 = timeAlive;
     呼(0.10, 0.028, 950, 240);
@@ -1236,6 +1343,7 @@ function killEnemy(e){
 function damagePlayer(d){
   if (P.iframe > 0 || state !== 'play') return;
   if (P.dr) d = d * (1 - P.dr);
+  { const 增D = 刷新增幅(); if (增D.减伤) d *= (1 - 增D.减伤); }
   /* ══ 限伤（不屈 / 狂血）══
      取两者里层数更高的那一档：200 / 150 / 100。
      ⚠ 必须有 12 秒内置 CD —— 游戏里有 0.7 秒受击无敌帧，
@@ -1256,8 +1364,12 @@ function damagePlayer(d){
     P.shield--; P.iframe = 0.5; shake = Math.max(shake, 3);
     addText(P.x, P.y - 30, '格挡', '#7fd4ff');
     addParts(P.x, P.y - 9, '#7fd4ff', 10, 80);
-    /* 盾被彻底打空 → 碎盾冲击波（主词条「护盾」的专属）*/
-    if (P.碎盾爆 && P.shield <= 0) 碎盾波();
+    /* 碎盾冲击波：**每击碎一层就触发一次**，但带 5 秒内置 CD
+       —— 不带 CD 的话 6 层盾连炸，一波能砸出 6 次 300% 攻击力，太超标了 */
+    if (P.碎盾爆 && (P.碎盾CD || 0) <= 0){
+      P.碎盾CD = 5;
+      碎盾波();
+    }
     return;
   }
   P.hp -= d;
@@ -1323,8 +1435,11 @@ function spawnEnemy(type, opts){
   /* 污染值：每 10 级 +1。怪的基础血量/攻击 ×1.30^污染（指数叠加）*/
   const pol = Math.pow(1.30, P.污染 || 0);
   /* 每波的自然成长放得很缓 —— 难度主要交给污染值 */
-  /* 35 波之后额外抬升：每波 ×1.15（玩家要求：后期必须真的变难）*/
-  const 后期 = wave >= 35 ? Math.pow(1.15, wave - 35) : 1;
+  /* 35 波之后每波 ×1.15
+     50 波之后再叠一档 ×1.07 —— 数值不显示，只在跨过 50 波时亮一句话。
+     两档叠起来：第 60 波 ≈ ×16.0，第 70 波 ≈ ×31.5（原方案是 11.2 / 22.1）*/
+  const 后期 = (wave >= 35 ? Math.pow(1.15, wave - 35) : 1)
+             * (wave >= 50 ? Math.pow(1.07, wave - 50) : 1);
   const hpS  = Math.pow(1.10, wave - 1) * pol * 后期;
   const atkS = Math.pow(1.055, wave - 1) * pol * 后期;
   const spdS = Math.min(1.7, 1 + wave * 0.022);
@@ -1554,6 +1669,7 @@ function 刷新攻击(){
 function update(dt){
   timeAlive += dt;
   刷新攻击();
+  const 增武 = 刷新增幅();      /* 合成武器给主角的增幅（换枪时才重算，之后读缓存）*/
   if (shake > 0) shake = Math.max(0, shake - dt * 14);
   if (屏力 > 0) 屏力 = Math.max(0, 屏力 - dt * 1.5);
   if (announce > 0) announce -= dt;
@@ -1562,7 +1678,7 @@ function update(dt){
   let mx = 0;
   if (keys.left)  mx -= 1;
   if (keys.right) mx += 1;
-  P.x = clamp(P.x + mx * P.speed * dt, 12, WORLD - 12);
+  P.x = clamp(P.x + mx * P.speed * (1 + 刷新增幅().移速) * dt, 12, WORLD - 12);
   if (mx) P.facing = mx;
   /* 小风动：跑动时脚下扬尘 */
   if (特效 && mx && P.onGround){
@@ -1608,7 +1724,7 @@ function update(dt){
 
   if (P.shieldMax > 0){
     P.shieldT += dt;
-    if (P.shield < P.shieldMax && P.shieldT >= 4){
+    if (P.shield < P.shieldMax && P.shieldT >= Math.max(1.2, 4 - 刷新增幅().护盾快)){
       P.shieldT = 0; P.shield++;
       addText(P.x, P.y - 32, '+盾', '#7fd4ff');
     }
@@ -1640,6 +1756,7 @@ function update(dt){
   if (P.幽魂冷却 > 0) P.幽魂冷却 -= dt;      /* 大幽魂聚合冷却：至少隔 2 波 */
   if (P.限伤CD > 0) P.限伤CD -= dt;
   if (P.晕CD  > 0) P.晕CD  -= dt;
+  if (P.碎盾CD > 0) P.碎盾CD -= dt;
   /* 狂血：残血时每秒回 1% 最大生命（每层）—— 让你敢长期待在低血量区间 */
   if (P.狂血 && P.hp / P.maxHp < 0.35)
     P.hp = Math.min(P.maxHp, P.hp + P.maxHp * 0.01 * P.狂血 * dt);
@@ -1734,7 +1851,7 @@ function update(dt){
   if (P.atkTimer <= 0){
     const t = nearestEnemy();
     if (t){
-      P.atkTimer = P.atkInterval;
+      P.atkTimer = P.atkInterval / (增武.攻速 * (mx ? (1 + 增武.移攻速) : 1));
       P.facing = t.x > P.x ? 1 : -1;
       if (timeAlive - 上次射击声 > 0.075){
         上次射击声 = timeAlive;
@@ -1751,21 +1868,33 @@ function update(dt){
       const dmg = P.atk * (1 + 暴阶 * (0.20 + 0.12 * 暴层));
       const isCrit = Math.random() < P.crit;
       /* 一发子弹的伤害；暴击整组共用一次判定 */
-      const 弹伤 = dmg * (isCrit ? P.critDmg : 1);
-      const 发 = (目标) => {
+      /* ── 枪给主角的伤害增幅全部加在这里 ── */
+      let 主角伤 = dmg * 增武.伤害;
+      if (增武.残血攻)   主角伤 *= 1 + (1 - P.hp / P.maxHp) * 增武.残血攻;
+      if (增武.有盾增伤 && P.shield > 0) 主角伤 *= 1 + 增武.有盾增伤;
+      if (增武.跑伤 && mx) 主角伤 *= 1 + 增武.跑伤;
+      if (增武.经验攻)   主角伤 *= 1 + Math.min(1, (P.总经验 || 0) / 40000);
+      const 弹伤 = 主角伤 * (isCrit ? (P.critDmg + 增武.暴伤) : 1);
+      const 发 = (目标, 源) => {
         if (!目标) return;
-        const a = Math.atan2((目标.y - 目标.h/2) - (P.y - 9), 目标.x - P.x);
+        const ox = 源 ? 源.x : P.x, oy = 源 ? 源.y : (P.y - 9);
+        const a = Math.atan2((目标.y - 目标.h/2) - oy, 目标.x - ox);
         const nx = Math.cos(a + Math.PI/2), ny = Math.sin(a + Math.PI/2);
-        for (let i = 0; i < P.projCount; i++){
-          const off = (i - (P.projCount-1)/2) * 3.2;   /* 平行弹道，只错开 3.2px */
-          projs.push({x: P.x + Math.cos(a)*8 + nx*off,
-                      y: P.y - 9 + Math.sin(a)*8 + ny*off,
+        const 弹数 = P.projCount + 增武.弹数;
+        for (let i = 0; i < 弹数; i++){
+          const off = (i - (弹数-1)/2) * 3.2;   /* 平行弹道，只错开 3.2px */
+          projs.push({x: ox + Math.cos(a)*8 + nx*off,
+                      y: oy + Math.sin(a)*8 + ny*off,
             vx: Math.cos(a)*P.projSpeed, vy: Math.sin(a)*P.projSpeed,
             dmg: 弹伤, crit: isCrit, life: 1.2, dead: false,
-            chain: P.连锁 || 0, pierce: P.贯穿 || 0});
+            chain: P.连锁 || 0,
+            pierce: (P.贯穿 || 0) + 增武.穿透,
+            穿伤: 增武.穿伤, 距伤: 增武.距伤});
         }
       };
       发(t);
+      /* 残影枪：再从你 1 秒前所在的位置打一轮 */
+      if (增武.残影 && P.轨迹 && P.轨迹.length > 8) 发(t, {x: P.轨迹[0].x, y: P.轨迹[0].y});
       /* 分裂+：额外射出的重弹，伤害 ×1.5 */
       if (P.splitp > 0){
         const a = Math.atan2((t.y - t.h/2) - (P.y - 9), t.x - P.x);
@@ -1811,6 +1940,12 @@ function update(dt){
 
   /* ---- 投射物 ---- */
   for (const p of projs){
+    /* 瘴气枪的增幅：主角的子弹飞行途中也一路撒毒雾 */
+    if (增武.毒雾 && !p.orbit) for (const e2 of enemies){
+      if (!e2.dead && Math.abs(e2.x - p.x) < 14 && Math.abs((e2.y - e2.h/2) - p.y) < 14){
+        e2.poisonT = 3.0; e2.poisonTick = 0.2;
+      }
+    }
     if (p.orbit){                                   /* 吸髓枪：绕着自己转 */
       /* 原来的判定是「横向差 < 怪宽/2+5」—— 但怪贴过来时停在离你 ~10 像素处，
          而光球在半径 34 的圈上转，横向差 24 像素，永远够不着（实测占比 0.1%）。
@@ -1859,6 +1994,13 @@ function update(dt){
         if (p.距伤) 本次 *= (1 + p.距伤 * Math.abs(p.x - (p.sx === undefined ? p.x : p.sx)) / 100);
         if (p.碎冰 && (e.frozen > 0 || e.slowT > 0)) 本次 *= p.碎冰;
         if (p.穿伤) 本次 *= Math.pow(1 + p.穿伤, p.穿层 || 0);
+        /* ── 枪给主角的命中增幅 ── */
+        if (增武.冰伤 !== 1 && (e.frozen > 0 || e.slowT > 0)) 本次 *= 增武.冰伤;
+        if (增武.毒火增伤 && e.poisonT > 0 && e.flameT > 0) 本次 *= 1 + 增武.毒火增伤;
+        if (增武.引爆 && (e.frozen > 0 || e.slowT > 0)){
+          本次 += P.atk * 1.5;
+          addParts(e.x, e.y - e.h/2, '#ff8a3c', 12, 130);
+        }
         if (p.引爆 && (e.frozen > 0 || e.slowT > 0)){
           const 毒 = P.atk * (0.5 + 0.2 * (Math.max(1, P.poison) - 1)) * 5 * 8;
           e.hp -= 毒; P.dmgDealt += 毒;
@@ -1874,7 +2016,15 @@ function update(dt){
               dmg: p.dmg * 0.7, crit: p.crit, life: 0.7, dead: false, w: p.w});
           }
         }
-        if (p.掉球) e.掉球 = 1;
+        if (p.掉球 || 增武.掉球) e.掉球 = 1;
+        if (增武.点燃 && !无形(e)){
+          e.flameT = Math.max(e.flameT || 0, 增武.灼烧延长 ? 5 : 3);
+          e.flameTick = 0.2;
+        }
+        if (增武.冰圈){
+          for (const e2 of enemies)
+            if (!e2.dead && Math.abs(e2.x - p.x) < 44) e2.slowT = 2.0;
+        }
         if (p.吸血) P.hp = Math.min(P.maxHp, P.hp + 本次 * p.吸血);
         addParts(p.x, p.y, '#ffffff', 4, 60);
         /* 扁鹊：落点范围 AOE + 中毒 */
@@ -1897,8 +2047,8 @@ function update(dt){
            暴击率一接近 100%，就是 1 → 2 → 4 → 8 …… 指数爆炸：
            实测 暴击 100% + 裂空 8 层 时，几帧之内子弹涨到几万颗，浏览器直接卡死 + 内存爆掉。
            现在每颗子弹只裂一次（和裂空枪的「只裂一次」一致），再加一道总数硬上限兜底。*/
-        if (P.critSplit && !p.已分裂 && projs.length < 600 &&
-            Math.random() < P.crit * P.critSplit){
+        const 裂率 = Math.max(P.critSplit ? P.crit * P.critSplit : 0, 增武.裂);
+        if (裂率 > 0 && !p.已分裂 && projs.length < 600 && Math.random() < 裂率){
           for (let k = -1; k <= 1; k += 2){
             const a2 = Math.atan2(p.vy, p.vx) + k * 0.55;
             projs.push({x: p.x, y: p.y, vx: Math.cos(a2)*P.projSpeed, vy: Math.sin(a2)*P.projSpeed,
@@ -1952,6 +2102,8 @@ function update(dt){
           e.hp -= 毒伤;
           P.dmgDealt += 毒伤;
           if (P.武器 && (武器表[P.武器] || {}).毒吸) P.hp = Math.min(P.maxHp, P.hp + 毒伤 * 0.5);
+          const 毒转 = 刷新增幅().毒转血;
+          if (毒转) P.hp = Math.min(P.maxHp, P.hp + 毒伤 * 毒转);
           if (Math.random() < 0.25)
             addText(e.x + rand(-3,3), e.y - e.h - 4, Math.round(毒伤) + '', '#8cd94a');
         }
@@ -2465,6 +2617,14 @@ function update(dt){
         spawnEnemy('thief', {boss: true, lives: 2 + Math.floor(wave/10), noElite: true});
         呼(0.45, 0.060, 200, 70);  响(80, 0.55, 'sawtooth', 0.048, 45);
       }
+    }
+    /* 跨过 50 波：难度再抬一档（只亮话，不显示数值）*/
+    if (wave === 50){
+      播报('难 度 继 续 增 加');
+      屏色 = '#ff5566';  屏力 = 0.85;  shake = 12;
+      呼(0.90, 0.085, 300, 900);  响(90, 1.0, 'sawtooth', 0.055, 40);
+      addParts(P.x, P.y - 9, '#ff5566', 40, 240);
+      rings.push({x: P.x, y: GROUND, r: 8, max: 220, life: 0.9, all: 0.9, color: '#ff5566'});
     }
   }
 
