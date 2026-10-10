@@ -235,7 +235,8 @@
 <div id="shop" class="ov hide">
   <h2>幽 魂 商 店</h2>
   <div style="font-size:13px;color:#8d9bc4;margin-bottom:10px">
-    击败大幽魂的奖励 · 你现在有 <b id="shGold" style="color:#ffd94a;font-size:16px">0</b> 金币
+    击败大幽魂的奖励 · 你现在有 <b id="shGold" style="color:#ffd94a;font-size:16px">0</b> 金币<br>
+    这里只卖<b style="color:#7fffd4">进阶词条</b>，偶尔会刷出<b style="color:#ffd94a">唯一词条</b>
   </div>
   <div id="shopCards" style="width:100%;max-width:470px;max-height:60vh;overflow-y:auto"></div>
   <button class="btn ghost" id="bShopClose" style="min-width:11em;margin-top:8px">离 开 商 店</button>
@@ -337,9 +338,9 @@ const PERKS = [
 
 /* ══════════ 主词条解锁的「进阶词条」（k:1 = 卡面是青色，50% 概率出现）══════════ */
 const UNLOCK = [
-  {id:'atkpct', n:'攻击力百分比', k:1, max:20,
-   d:'最终攻击力 = 基础攻击力 × (1 + 10%)　最多堆到 200%　※污染值每级另外白送 +50%',
-   f:()=>P.atkPct = (P.atkPct || 0) + 0.10},
+  {id:'atkpct', n:'攻击力百分比', k:1, max:10,
+   d:'最终攻击力 = 基础攻击力 × (1 + 20%)　10 层封顶 = +200%　※污染值每级另外白送 +50%',
+   f:()=>P.atkPct = (P.atkPct || 0) + 0.20},
   {id:'aspd2',  n:'疾风·续', k:1, max:6, d:'攻击速度 +16%（把疾风砍掉的那一半补回来）',
    f:()=>P.atkInterval *= 0.862},
   {id:'critsplit', n:'裂空', k:1, max:8,
@@ -688,7 +689,7 @@ function reset(){
     双向: 0, 震地: 0, 回响: 0, 卫球: 0, 背水: 0, 连锁: 0,
     基攻: 7, atkPct: 0, 主词条: null, 主卡池: [], 已删词条: [], 已选唯一: null,
     选序: [], 复活次数: 0, 二段跳: 0, 跳数: 0, 贯穿: 0, 金币: 0,
-    魂经验: 0, 魂金币: 0, 商店待开: 0, 商店主词条: [], 跳跃AOE: 0,
+    魂经验: 0, 魂金币: 0, 商店待开: 0, 商店主词条: [], 商店唯一: [], 跳跃AOE: 0,
     flame: 0, 火烈弹: 0, 火烈Cd: 1, 不屈: 0, 狂血: 0, 震晕: 0,
     限伤CD: 0, 晕CD: 0, 碎盾爆: 0, 碎盾CD: 0, 狂暴阶: 0,
     hpup: 0, snipeCd: 0, execCd: 0, bianCd: 0, iceCd: 0, critSplit: 0, splitp: 0,
@@ -1026,16 +1027,18 @@ function takePerk(o){
    条件是你某个词条已经叠到 6 层以上，而它有对应的进阶（见 解锁表）。
    买到的进阶算主词条（HUD 上会标 ⭐），但因为商店 19 级之后才开，
    那时候武器早就合成完了，所以商店里的主词条不能拿去合成武器。*/
-/* 价格是照着「一局大概能攒 6000~7000 金币」定的：
-   目标是整局在商店里只额外买到 15~20 层词条（普通局本身约 64 层）。
-   第一次买 220，同一个词条叠第二次 390，第三次 560……
-   实测：改之前一局能买到 151 层（太肥），改完约 18 层。*/
-const 商店基础价 = 150, 商店每层价 = 250;
-const 进阶基础价 = 400, 进阶每层价 = 350;
+/* 商店现在只卖「进阶词条」和「有概率刷出来的唯一词条」——
+   普通词条升级时本来就会白给，摆进商店只会挤掉真正稀缺的东西。
+   价格比之前下调了一大截：第一次 120，同一张叠第二次 210，第三次 300…… */
+const 进阶基础价 = 120, 进阶每层价 = 90;
+const 唯一售价 = 2000;      /* 唯一词条一口价 */
+const 唯一概率 = 0.25;      /* 每次开商店，有 25% 概率刷出一个唯一词条 */
 let 商店货架 = [];
 
-function 商店价格(o){ return o.k ? (进阶基础价 + (P.inv[o.id] || 0) * 进阶每层价)
-                                 : (商店基础价 + (P.inv[o.id] || 0) * 商店每层价); }
+function 商店价格(o){
+  if (o.u) return 唯一售价;                       /* 唯一词条一口价 */
+  return 进阶基础价 + (P.inv[o.id] || 0) * 进阶每层价;
+}
 
 /* ══════════ 商店第 5 栏到底卖哪个进阶 ══════════
    条件：某个词条叠到 6 层以上、它有进阶、进阶本身还没堆满。
@@ -1074,11 +1077,11 @@ function 刷商店(){
     const 价  = 商店价格(o);
     const 穷  = (P.金币 || 0) < 价;
     const b = document.createElement('button');
-    b.className = 'card ' + (o.k ? 'adv' : 'shop') + (满 || 穷 ? ' cant' : '');
+    b.className = 'card ' + (o.u ? 'uni' : 'adv') + (满 || 穷 ? ' cant' : '');
     b.innerHTML = '<span class="n">' + o.n
-                + (o.k ? '<i class="tag2">进阶 · 主词条</i>' : '') + '</span>'
+                + (o.u ? '<i class="tag">唯一</i>' : '<i class="tag2">进阶 · 主词条</i>') + '</span>'
                 + '<span class="d">' + o.d + 词条效果后缀(o) + '</span>'
-                + '<span class="s">已叠 ' + st + ' 层' + (o.max ? ' / ' + o.max : '') + '</span>'
+                + (o.u ? '' : '<span class="s">已叠 ' + st + ' 层' + (o.max ? ' / ' + o.max : '') + '</span>')
                 + '<span class="price">'
                 + (满 ? '已 满' : (价 + ' 金' + (穷 ? '　（金币不够）' : '')))
                 + '</span>';
@@ -1094,7 +1097,14 @@ function 买词条(o){
   P.金币 -= 价;
   o.f();
   P.inv[o.id] = st + 1;
-  if (o.k){
+  if (o.u){
+    /* 唯一词条：一局只能拿一次，买完就从货架上撤掉 */
+    P.商店唯一 = P.商店唯一 || [];
+    if (!P.商店唯一.includes(o.id)) P.商店唯一.push(o.id);
+    商店货架 = 商店货架.filter(x => x !== o);
+    屏色 = '#ffe066'; 屏力 = 0.7; shake = 9;
+    播报('商店 · 唯一词条「' + o.n + '」');
+  } else if (o.k){
     P.商店主词条 = P.商店主词条 || [];
     if (!P.商店主词条.includes(o.id)) P.商店主词条.push(o.id);
   }
@@ -1105,15 +1115,31 @@ function 买词条(o){
 function 开商店(){
   if (state !== 'play') return;
   state = 'shop'; keys = {};
-  const 池 = PERKS.filter(p => !P.已删词条.includes(p.id))
-                  .filter(p => !p.max || (P.inv[p.id] || 0) < p.max);
-  const 临时 = 池.slice();
+  /* ══ 货架 = 5 张进阶词条，其中可能有 1 张是唯一词条 ══
+     ① 不卖普通词条（升级白给，摆这里只会挤掉稀缺的东西）
+     ② 不卖「你自己主词条的进阶」—— 那张升级时 50% 概率白抽
+     ③ 优先给你还没买过的进阶
+     ④ 25% 概率刷出一个唯一词条占一格（2000 金一口价）*/
+  const 自池 = P.主卡池 || [];
+  const 已拥有 = [];
+  if (P.已选唯一) 已拥有.push(P.已选唯一);
+  for (const id of (P.商店唯一 || [])) 已拥有.push(id);
+
+  let 进阶池 = UNLOCK.filter(o => !自池.includes(o.id))
+                     .filter(o => !o.max || (P.inv[o.id] || 0) < o.max);
+  const 没买过的 = 进阶池.filter(o => !(P.inv[o.id] > 0));
+  if (没买过的.length >= 3) 进阶池 = 没买过的;         /* 够 3 张就先给没买过的 */
+  const 唯一池 = UNIQUES.filter(o => !已拥有.includes(o.id));
+
   商店货架 = [];
-  while (商店货架.length < 4 && 临时.length)
-    商店货架.push(临时.splice((Math.random() * 临时.length) | 0, 1)[0]);
-  const 进 = 商店进阶词条();
-  if (进 && (!进.max || (P.inv[进.id] || 0) < 进.max)) 商店货架.push(进);
-  else if (临时.length) 商店货架.push(临时.splice((Math.random() * 临时.length) | 0, 1)[0]);
+  const 唯一位 = (唯一池.length && Math.random() < 唯一概率)
+               ? ((Math.random() * 5) | 0) : -1;
+  const 临时 = 进阶池.slice();
+  for (let i = 0; i < 5; i++){
+    if (i === 唯一位) 商店货架.push(唯一池.splice((Math.random() * 唯一池.length) | 0, 1)[0]);
+    else if (临时.length) 商店货架.push(临时.splice((Math.random() * 临时.length) | 0, 1)[0]);
+    else if (唯一池.length) 商店货架.push(唯一池.splice((Math.random() * 唯一池.length) | 0, 1)[0]);
+  }
   刷商店();
   $('shop').classList.remove('hide');
   响(1046, 0.16, 'triangle', 0.05, 1568);
@@ -3078,9 +3104,13 @@ function syncHUD(){
   HUD.xpBar.classList.toggle('floor', (P.无升级秒 || 0) >= 60);
   const 主 = P.主词条 ? 按id找词条(P.主词条) : null;
   const 枪 = P.武器 ? 武器表[P.武器] : null;
-  const 店主 = (P.商店主词条 || []).map(id => (按id找词条(id) || {}).n).filter(Boolean);
+  const 店主 = (P.商店主词条 || []).map(id => (按id找词条(id) || {}).n);
+  for (const id of (P.商店唯一 || [])){
+    const u = 按id找词条(id); if (u) 店主.push('【' + u.n + '】');
+  }
+  const 店主2 = 店主.filter(Boolean);
   设文(HUD.mainPk, (主 ? '主词条 · ' + 主.n : '') + (枪 ? '　🔫 ' + 枪.n : '')
-                 + (店主.length ? '　⭐ ' + 店主.join('、') : ''));
+                 + (店主2.length ? '　⭐ ' + 店主2.join('、') : ''));
   const 魂 = [];
   if (P.魂经验) 魂.push('魂经验 +' + Math.round(P.魂经验 * 100) + '%');
   if (P.魂金币) 魂.push('魂金币 +' + Math.round(P.魂金币 * 100) + '%');
