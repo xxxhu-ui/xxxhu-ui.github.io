@@ -204,7 +204,7 @@
   <div class="sub" style="margin-top:2px;font-size:12px;line-height:1.85">
     <b style="color:#ffe066">金色描边</b> = 精英怪（血厚、经验 ×3）<br>
     <b style="color:#ff5566">头顶红点</b> = 那个怪还剩几条命<br>
-    <b style="color:#c77dff">污染值</b> = 每 10 级 +1，怪的基础数值 ×1.25，同时白送你 <b>攻击力百分比 +50%</b><br>
+    <b style="color:#c77dff">污染值</b> = 每 10 级 +1，怪的基础数值 ×1.30，同时白送你 <b>攻击力百分比 +50%</b><br>
     <b style="color:#c77dff">污染值</b> 每 +1，怪死后多 10% 概率留下「幽魂」；幽魂超过 5 只 → 聚合成<b>大幽魂</b><br>
     「幽魂」悬停时<b>无形</b>（打不到），俯冲落地后有 1 秒<b>破绽</b>（伤害翻倍）<br>
     每产出 18 只幽魂 → 全部湮灭，聚合成 3 条命的<b>大幽魂</b>（唯一；至少隔 3 波才会再来一只）<br>
@@ -442,19 +442,24 @@ const 武器表 = {
 };
 
 /* ══════════ 30 级「唯一词条」：每种只能拿一次，出现时是金卡 ══════════ */
+/* ══════════ 30 级「唯一词条」六选一 ══════════
+   设计原则：**后期必须还能用**。
+   旧的双向攻击 / 回响 / 护卫星环 / 背水一战全是「固定倍数 P.atk」，
+   而主角一个弹幕就是 atk×7×攻速 —— 这些东西永远追不上，实测占输出 1~2%，
+   所以整批删掉，换成「百分比生命 / 永久成长 / 控场」这一类不会过时的机制。*/
 const UNIQUES = [
-  {id:'u2way', n:'双向攻击', u:1, d:'同时向左右两侧最近的敌人各打一轮',
-   f:()=>P.双向 = 1},
-  {id:'ucrash',n:'天崩地裂', u:1, d:'跳起来落地时砸出冲击波：攻击力 ×3 的范围伤害',
+  {id:'ucrash', n:'天崩地裂', u:1, d:'跳起来落地时砸出冲击波：攻击力 ×3 的范围伤害',
    f:()=>P.震地 = 1},
-  {id:'uecho', n:'回响',     u:1, d:'每次攻击有 35% 概率立刻再打一轮',
-   f:()=>P.回响 = 0.35},
-  {id:'uorb',  n:'护卫星环', u:1, d:'身边常驻 3 颗光球，碰到敌人造成攻击力 ×0.6 伤害',
-   f:()=>P.卫球 = 3},
-  {id:'ulast', n:'背水一战', u:1, d:'血量低于 35% 时，攻速 +70%、移速 +35%',
-   f:()=>P.背水 = 1},
-  {id:'uchain',n:'连锁闪电', u:1, d:'投射物命中后弹向最近的敌人，最多弹 3 次',
+  {id:'uchain', n:'连锁闪电', u:1, d:'投射物命中后弹向最近的敌人，最多弹 3 次',
    f:()=>P.连锁 = 3},
+  {id:'uslayer',n:'幽灵杀手', u:1, d:'小幽魂只要进入可攻击状态（俯冲 / 落地僵直），立刻当场湮灭',
+   f:()=>P.幽灵杀手 = 1},
+  {id:'uscythe',n:'死神之枪', u:1, d:'每 10 秒天降一柄巨枪：大范围 AOE，命中的怪各扣 10% 最大生命',
+   f:()=>P.死神枪 = 1},
+  {id:'usoul',  n:'噬魂',     u:1, d:'每击杀一只怪永久 +0.25% 攻击力（无上限，越打越强）',
+   f:()=>P.噬魂 = 1},
+  {id:'ubone',  n:'蚀骨',     u:1, d:'你的每次命中额外造成「目标最大生命 0.15%」的伤害（后期也不会过时）',
+   f:()=>P.蚀骨 = 1},
 ];
 
 function perkOptions(){
@@ -615,6 +620,29 @@ function 冲击波(dmg, 色1, 色2, 震度){
 }
 /* 天崩地裂：攻击力 ×3 */
 function 震地波(){ 冲击波(P.atk * 3, '#ffd94a', '#ff8a4c', 6); }
+
+/* ══ 死神之枪：天降巨枪，圈内每只怪各扣 10% 最大生命 ══
+   百分比伤害，所以永远不会因为怪的血量膨胀而过时 */
+function 死神枪落(x){
+  const R0 = 96;
+  rings.push({x, y: GROUND, r: 8, max: R0, life: 0.6, all: 0.6, color: '#c77dff'});
+  for (let i = 0; i < 34; i++)
+    parts.push({x: x + rand(-13, 13), y: GROUND - rand(0, 170), vx: rand(-40, 40), vy: rand(70, 230),
+      life: rand(0.3, 0.65), max: 0.65, color: i % 2 ? '#c77dff' : '#ffffff', s: 2});
+  for (const e of enemies){
+    if (e.dead || 无形(e)) continue;
+    if (Math.abs(e.x - x) < R0 + e.w/2){
+      const 伤 = e.maxHp * 0.10;
+      P.dmgDealt += 伤;
+      if (e.盾 > 0){ e.盾 -= 伤; if (e.盾 <= 0){ e.hp += e.盾; e.盾 = 0; } }
+      else e.hp -= 伤;
+      addText(e.x, e.y - e.h - 24, '死神 ' + Math.round(伤), '#c77dff');
+      if (e.hp <= 0) killEnemy(e);
+    }
+  }
+  屏色 = '#c77dff';  屏力 = 0.42;  shake = Math.max(shake, 8);
+  呼(0.5, 0.07, 1600, 220);  响(180, 0.4, 'sawtooth', 0.05, 60);
+}
 /* 迅捷·续：二段跳之后落地，攻击力 ×(150% + 30%×额外层数)，最高 360% */
 function 跳砸倍率(){ return Math.min(3.6, 1.5 + 0.3 * (Math.max(1, P.跳跃AOE || 1) - 1)); }
 function 跳砸波(){
@@ -644,7 +672,7 @@ function addXp(v){
   if (pol > (P.污染 || 0)){
     P.污染 = pol;
     P.hp = P.maxHp;
-    播报('污染值 ' + P.污染 + '　怪的基础数值 ×' + Math.pow(1.25, P.污染).toFixed(2)
+    播报('污染值 ' + P.污染 + '　怪的基础数值 ×' + Math.pow(1.30, P.污染).toFixed(2)
         + '　你的攻击力 +' + (P.污染 * 50) + '%');
     shake = 5;
     addParts(P.x, P.y - 9, '#c77dff', 30, 180);
@@ -962,6 +990,8 @@ $('bShopClose').onclick = 关商店;
 /* ============================ 伤害 ============================ */
 function hurtEnemy(e, d, isCrit){
   if (无形(e)) return;                      /* 悬停中的幽魂：打不到 */
+  /* 蚀骨：每次命中额外造成目标最大生命 0.15% 的伤害 —— 后期打不动怪时的保底 */
+  if (P.蚀骨) d += e.maxHp * 0.0015;
   if (e.type === 'ghost' && e.僵直 > 0) d *= 2;   /* 落地僵直 = 破绽，伤害翻倍 */
   /* 「壳」形态的护盾：盾没破之前，本体一滴血都不掉 */
   if (e.盾 > 0){
@@ -1223,8 +1253,8 @@ function spawnEnemy(type, opts){
           ? clamp(opts.x, 20, WORLD - 20)
           : clamp(P.x + side * (180 + rand(0,60)), 24, WORLD - 24);
 
-  /* 污染值：每 10 级 +1。怪的基础血量/攻击 ×1.25^污染（指数叠加）*/
-  const pol = Math.pow(1.25, P.污染 || 0);
+  /* 污染值：每 10 级 +1。怪的基础血量/攻击 ×1.30^污染（指数叠加）*/
+  const pol = Math.pow(1.30, P.污染 || 0);
   /* 每波的自然成长放得很缓 —— 难度主要交给污染值 */
   /* 35 波之后额外抬升：每波 ×1.15（玩家要求：后期必须真的变难）*/
   const 后期 = wave >= 35 ? Math.pow(1.15, wave - 35) : 1;
@@ -1240,7 +1270,7 @@ function spawnEnemy(type, opts){
   const h  = Math.max(6, Math.round(d.h * sizeMul));
   /* 首领的血量按玩家当前 DPS 来定 —— 保证它一定会被打死，不会拖到下一波 */
   const hp = opts.boss
-      ? Math.max(300, Math.round(玩家DPS() * (t === 'mirror' ? 4 : (t === 'wuxiang' ? 7 : 12))))
+      ? Math.max(300, Math.round(玩家DPS() * (t === 'mirror' ? 4 : (t === 'wuxiang' ? 12 : 12))))
       : (opts.hpDps ? Math.max(180, Math.round(玩家DPS() * opts.hpDps))
                     : Math.max(1, Math.round(d.hp * hpS * hpMul)));
 
@@ -1444,7 +1474,10 @@ function 幽魂结算(){
    为什么要有这个：怪的血量按 1.25^污染 往上涨，如果玩家的攻击力一点都不涨，
    那只要主词条不是攻击系（甚至只是没抽到「攻击力百分比」），后期就完全打不动。*/
 function 污染攻击加成(){ return (P.污染 || 0) * 0.5; }
-function 攻击倍率(){ return 1 + (P.atkPct || 0) + 污染攻击加成(); }
+function 攻击倍率(){
+  /* 噬魂：每击杀一只怪永久 +0.25% 攻击力（无上限）*/
+  return 1 + (P.atkPct || 0) + 污染攻击加成() + (P.噬魂 ? (P.kills || 0) * 0.0025 : 0);
+}
 function 刷新攻击(){
   P.atk = (P.基攻 || 7) * 攻击倍率();
   return P.atk;
@@ -1537,6 +1570,17 @@ function update(dt){
 
   /* ---- 主词条解锁的进阶效果 ---- */
   if (P.幽魂冷却 > 0) P.幽魂冷却 -= dt;      /* 大幽魂聚合冷却：至少隔 2 波 */
+  /* 死神之枪：每 10 秒降一柄 */
+  if (P.死神枪){
+    P.死枪Cd = (P.死枪Cd === undefined ? 8 : P.死枪Cd) - dt;
+    if (P.死枪Cd <= 0){
+      P.死枪Cd = 10;
+      let 目标 = null, 近 = 1e9;
+      for (const e of enemies){ if (e.dead) continue;
+        const d = Math.abs(e.x - P.x); if (d < 近){ 近 = d; 目标 = e; } }
+      死神枪落(目标 ? 目标.x : clamp(P.x + 120, 40, WORLD - 40));
+    }
+  }
   if (P.hpup){                                  /* 铁壁·续：上限随时间涨 */
     const 增 = (5 * P.hpup) / 60 * dt;
     P.maxHp += 增; P.hp = Math.min(P.maxHp, P.hp + 增);
@@ -1824,6 +1868,15 @@ function update(dt){
       if (e.hp <= 0){ killEnemy(e); continue; }
     }
 
+    /* ══ 幽灵杀手：小幽魂只要「有形」（俯冲中 / 落地僵直）就当场死 ══ */
+    if (P.幽灵杀手 && e.type === 'ghost' && !无形(e)){
+      e.dead = true;
+      addParts(e.x, e.y - e.h/2, '#dfe8ff', 20, 170);
+      addText(e.x, e.y - e.h - 10, '斩杀', '#ffffff');
+      呼(0.09, 0.032, 2200, 600);
+      continue;
+    }
+
     const dx = P.x - e.x, dist = Math.abs(dx);
     let sp = e.spd * (e.slowT > 0 ? (1 - Math.max(P.frost, e.slowVal || 0)) : 1);
     if (e.盾 > 0) sp *= 0.55;
@@ -1895,23 +1948,32 @@ function update(dt){
         if (Math.random() < dt * 40)
           addParts(e.x + rand(-16,16), e.y - e.h/2 + rand(-16,16), '#ffffff', 2, 120);
       } else if (e.形 === 0){
-        /* ── 刃：三段连冲 ── */
+        /* ── 刃：四段连冲，每一段都在地上留一道震荡波（必须跳，不能一路贴地跑）── */
         if (e.charging > 0){
           e.charging -= dt;
-          dir = e.chargeDir; sp = 330;
+          dir = e.chargeDir; sp = 380;
           if (Math.random() < dt * 30) addParts(e.x, e.y - e.h/2, '#ff2233', 3, 90);
         } else if (e.wind > 0){
           e.wind -= dt; dir = 0; sp = 0;
           if (e.wind <= 0){
-            e.charging = 0.32; e.chargeDir = Math.sign(P.x - e.x) || 1;
+            e.charging = 0.30; e.chargeDir = Math.sign(P.x - e.x) || 1;
             e.连冲++;
-            if (e.连冲 < 3) e.wind = 0.22;      /* 立刻接下一段 */
-            else {                                   /* 三段打完 → 爆发弹幕 */
+            waves.push({x: e.x, dir: (e.连冲 % 2 ? 1 : -1), spd: 300, life: 1.7,
+                        dmg: e.atk * 0.85, hit: false, dead: false});
+            addParts(e.x, GROUND, '#ff8a4c', 10, 120);
+            if (e.连冲 < 4) e.wind = 0.20;      /* 立刻接下一段 */
+            else {                                   /* 四段打完 → 旋转弹幕 + 瞄准散射 */
               e.连冲 = 0; e.蓄 = 0.9;
-              for (let k = 0; k < 10; k++){
-                const a = (k / 10) * Math.PI * 2;
+              for (let k = 0; k < 14; k++){
+                const a = (k / 14) * Math.PI * 2;
                 eprojs.push({x: e.x, y: e.y - e.h/2, vx: Math.cos(a)*135, vy: Math.sin(a)*135,
                   dmg: e.atk*0.55, life: 3.5, dead: false, spin: (k % 2 ? 2.2 : -2.2)});
+              }
+              const 基 = Math.atan2((P.y - 9) - (e.y - e.h/2), P.x - e.x);
+              for (let k = -3; k <= 3; k++){
+                const a = 基 + k * 0.17;
+                eprojs.push({x: e.x, y: e.y - e.h/2, vx: Math.cos(a)*190, vy: Math.sin(a)*190,
+                  dmg: e.atk*0.5, life: 3.0, dead: false});
               }
               屏色 = '#ff2233'; 屏力 = 0.28;  shake = Math.max(shake, 6);
             }
@@ -1919,40 +1981,56 @@ function update(dt){
         } else {
           e.蓄 -= dt;
           dir = Math.sign(P.x - e.x) || 1; sp = 0;
-          if (e.蓄 <= 0) e.wind = 0.45;             /* 起手蓄力预警 */
+          if (e.蓄 <= 0) e.wind = 0.42;             /* 起手蓄力预警 */
         }
       } else if (e.形 === 1){
-        /* ── 壳：护盾 + 追踪弹 ── */
+        /* ── 壳：厚盾 + 扇形封走位 + 追踪弹 ── */
         e.fly = 0;
-        if (e.盾max === 0){ e.盾max = Math.round(玩家DPS() * 5); e.盾 = e.盾max; }
+        if (e.盾max === 0){ e.盾max = Math.round(玩家DPS() * 7); e.盾 = e.盾max; }
         const th = P.x + e.off;
         dir = Math.abs(th - e.x) > 4 ? Math.sign(th - e.x) : 0;
         sp *= 0.55;
         e.cd -= dt;
         if (e.cd <= 0 && e.盾 > 0){
-          e.cd = 1.9;
-          for (let k = -1; k <= 1; k++){
-            const a = Math.atan2((P.y - 9) - (e.y - e.h/2), P.x - e.x) + k * 0.30;
-            eprojs.push({x: e.x, y: e.y - e.h/2, vx: Math.cos(a)*120, vy: Math.sin(a)*120,
+          e.cd = 1.5;
+          const 基 = Math.atan2((P.y - 9) - (e.y - e.h/2), P.x - e.x);
+          for (let k = -2; k <= 2; k++){                 /* 5 发扇形，封走位 */
+            const a = 基 + k * 0.22;
+            eprojs.push({x: e.x, y: e.y - e.h/2, vx: Math.cos(a)*168, vy: Math.sin(a)*168,
+              dmg: e.atk*0.38, life: 4.0, dead: false});
+          }
+          for (let k = -1; k <= 1; k += 2){              /* 2 发追踪，躲不掉只能拖 */
+            const a = 基 + k * 0.55;
+            eprojs.push({x: e.x, y: e.y - e.h/2, vx: Math.cos(a)*110, vy: Math.sin(a)*110,
               dmg: e.atk*0.42, life: 4.5, dead: false, homing: 1.7});
           }
         }
       } else {
-        /* ── 眼：浮空 + 旋转弹幕 + 召唤子眼 ── */
+        /* ── 眼：浮空 + 横向漂移 + 密弹幕 + 双竖激光 + 召唤子眼 ── */
         e.fly = 1;
         e.bob += dt * 2;
         e.y = GROUND - 66 + Math.sin(e.bob) * 7;
+        e.x = clamp(e.x + Math.sin(e.bob * 0.55) * 46 * dt, 20, WORLD - 20);  /* 飘着走，不好锁定 */
         dir = 0; sp = 0;
         e.cd -= dt;
         if (e.cd <= 0){
-          e.cd = 1.6;
-          const 基 = timeAlive * 0.9;
-          for (let k = 0; k < 24; k++){
-            const a = 基 + (k / 24) * Math.PI * 2;
+          e.cd = 1.4;
+          const 基 = timeAlive * 1.5;
+          for (let k = 0; k < 32; k++){
+            const a = 基 + (k / 32) * Math.PI * 2;
             eprojs.push({x: e.x, y: e.y - e.h/2, vx: Math.cos(a)*112, vy: Math.sin(a)*112,
-              dmg: e.atk*0.34, life: 4.5, dead: false, spin: 1.1});
+              dmg: e.atk*0.32, life: 4.5, dead: false, spin: 1.5});
           }
           屏色 = '#c77dff'; 屏力 = 0.16;
+        }
+        /* 双竖激光：封住你身体两侧，只留中间一条缝 —— 配合满屏弹幕很难站稳 */
+        e.柱Cd = (e.柱Cd === undefined ? 4.5 : e.柱Cd) - dt;
+        if (e.柱Cd <= 0){
+          e.柱Cd = 4.5;
+          beams.push({x: clamp(P.x - 46, 12, WORLD-12), w: 16, t: 0.70, t2: 0.34, dmg: e.atk*0.9, dead: false});
+          beams.push({x: clamp(P.x + 46, 12, WORLD-12), w: 16, t: 0.70, t2: 0.34, dmg: e.atk*0.9, dead: false});
+          addText(e.x, e.y - e.h - 30, '双 柱', '#c77dff');
+          呼(0.4, 0.05, 300, 1400);
         }
         e.子眼计时 -= dt;
         if (e.子眼计时 <= 0){
@@ -2718,7 +2796,7 @@ function syncHUD(){
   设文(HUD.perk, '词条 ' + perkCount());
   const pn = P.污染 || 0;
   设文(HUD.pol, '污染 ' + pn);
-  设文(HUD.polx, '怪 ×' + Math.pow(1.25, pn).toFixed(2)
+  设文(HUD.polx, '怪 ×' + Math.pow(1.30, pn).toFixed(2)
                 + (pn ? '　攻 +' + (pn * 50) + '%' : ''));
   HUD.pol.classList.toggle('on', pn > 0);
   HUD.polx.classList.toggle('on', pn > 0);
