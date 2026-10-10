@@ -399,6 +399,15 @@ const UNLOCK = [
   {id:'stun', n:'震晕', k:1, max:6,
    d:'主角子弹命中时眩晕敌人 2 秒；内置 CD 8 秒，每层 −1 秒（最少 2 秒）。首领免疫',
    f:()=>P.震晕 = (P.震晕 || 0) + 1},
+  {id:'longshot', n:'长弓·贯穿', k:1, max:5,
+   d:'每 2 秒射出一发长条弹，贯穿路径上的所有敌人。每贯穿过 1 只，攻击力百分比 +5%×层数'
+   + '（每次最多算 4 只），只持续 2 秒；再选一次每只多加 5%',
+   f:()=>P.长弓 = (P.长弓 || 0) + 1},
+  {id:'goldxp', n:'贪婪·财源', k:1, max:3,
+   d:'每 10 秒白给「你的等级 × 2」金币；选满 3 层后变成「等级 × 4」',
+   /* ⚠ 必须在这里把 CD 设成 10：reset() 里 财源Cd 是 0，
+      不设的话拿到的那一帧就立刻发一次钱，等于白送一次，不是「每过 10 秒」*/
+   f:()=>{ P.财源 = (P.财源 || 0) + 1; P.财源Cd = 10; }},
   {id:'jumpaoe', n:'迅捷·续', k:1, max:8,
    d:'「二段跳」之后落地时砸出冲击波：范围与「天崩地裂」完全相同，'
    + '伤害 = 攻击力 ×150%，每层 +30%（最高 360%）；可以和「天崩地裂」同时触发',
@@ -407,7 +416,7 @@ const UNLOCK = [
 const 解锁表 = {
   atk:['atkpct'], aspd:['aspd2'], crit:['critsplit'], cdmg:['snipe'],
   hp:['hpup'], ls:['execute'], proj:['splitp'], poison:['bianque'], frost:['ice'],
-  move:['jumpaoe'], range:[], xp:[],
+  move:['jumpaoe'], range:['longshot'], xp:['goldxp'],
   regen:['unbend'], berserk:['bloodrage'], kb:['stun'], flame:['firelance'], shield:[],
 };
 /* 主词条本身的效果（不是可选词条的那种）*/
@@ -842,6 +851,8 @@ function reset(){
     魂经验: 0, 魂金币: 0, 商店待开: 0, 商店主词条: [], 商店唯一: [], 跳跃AOE: 0,
     灵魂: 0, 灵魂解锁: 0,
     flame: 0, 火烈弹: 0, 火烈Cd: 1, 不屈: 0, 狂血: 0, 震晕: 0,
+    /* 长弓·贯穿 / 贪婪·财源：这两个也必须清，否则第一局拿过、第二局一开局就还在跑 */
+    长弓: 0, 长弓Cd: 0, 长弓加成: 0, 长弓掉: 0, 财源: 0, 财源Cd: 0,
     限伤CD: 0, 晕CD: 0, 碎盾爆: 0, 碎盾CD: 0, 狂暴阶: 0,
     hpup: 0, snipeCd: 0, execCd: 0, bianCd: 0, iceCd: 0, critSplit: 0, splitp: 0,
     snipe: 0, execute: 0, bianque: 0, ice: 0, 跳锁: 0,
@@ -1944,7 +1955,8 @@ function 幽魂结算(){
 function 污染攻击加成(){ return (P.污染 || 0) * 0.5; }
 function 攻击倍率(){
   /* 噬魂：每击杀一只怪永久 +0.25% 攻击力（无上限）*/
-  return 1 + (P.atkPct || 0) + 污染攻击加成() + (P.噬魂 ? (P.kills || 0) * 0.0025 : 0);
+  return 1 + (P.atkPct || 0) + 污染攻击加成() + (P.噬魂 ? (P.kills || 0) * 0.0025 : 0)
+       + (P.长弓加成 || 0);   /* 长弓·贯穿的 2 秒临时加成 */
 }
 function 刷新攻击(){
   P.atk = (P.基攻 || 7) * 攻击倍率();
@@ -2066,6 +2078,34 @@ function update(dt){
           比伤: 0.005 + 0.002 * (P.火烈弹 - 1)});
         addParts(P.x, P.y - 9, '#ff8a3c', 8, 110);
       }
+    }
+  }
+  /* 长弓·贯穿：每 2 秒一发长条弹；贯穿换来的加成只活 2 秒 */
+  if (P.长弓加成 > 0){
+    P.长弓掉 -= dt;
+    if (P.长弓掉 <= 0){ P.长弓加成 = 0; P.长弓掉 = 0; }
+  }
+  if (P.长弓){
+    P.长弓Cd = (P.长弓Cd === undefined ? 2 : P.长弓Cd) - dt;
+    if (P.长弓Cd <= 0){
+      P.长弓Cd = 2;
+      const 目 = nearestEnemy();
+      const a = 目 ? Math.atan2((目.y - 目.h/2) - (P.y - 9), 目.x - P.x)
+                   : (P.facing > 0 ? 0 : Math.PI);
+      projs.push({x: P.x, y: P.y - 9, vx: Math.cos(a)*620, vy: Math.sin(a)*620,
+        dmg: P.atk * 1.2, crit: Math.random() < P.crit, life: 1.2, dead: false,
+        pierce: 99, 长: 1, big: 1});
+      响(rand(300, 360), 0.09, 'sawtooth', 0.030, 900);
+    }
+  }
+  /* 贪婪·财源：每 10 秒白给等级 ×(2 或 4) 的金币 */
+  if (P.财源){
+    P.财源Cd = (P.财源Cd === undefined ? 10 : P.财源Cd) - dt;
+    if (P.财源Cd <= 0){
+      P.财源Cd = 10;
+      const 得 = Math.round(P.level * (P.财源 >= 3 ? 4 : 2));
+      P.金币 = (P.金币 || 0) + 得;
+      addText(P.x, P.y - 44, '金币 +' + 得, '#ffd94a');
     }
   }
   /* 死神之枪：每 10 秒降一柄 */
@@ -2369,6 +2409,12 @@ function update(dt){
         const 已打 = p.hit || (p.hit = []);
         if (p.pierce > 0 && !已打.includes(e)){
           已打.push(e); p.pierce--; p.穿层 = (p.穿层 || 0) + 1;
+          /* ⚠ 必须是「每颗子弹自己穿了几只」——所以读 p.穿层，不能读全局计数。
+             每只 +5%×层数，一次最多算 4 只，只有 2 秒。*/
+          if (p.长){
+            P.长弓加成 = (P.长弓 || 1) * Math.min(4, p.穿层) * 0.05;
+            P.长弓掉   = 2.0;
+          }
         } else p.dead = true;
         break;
       }
@@ -3418,6 +3464,8 @@ function syncHUD(){
   if (P.狂血)      附.push('狂血 ' + P.狂血);
   if (P.震晕)      附.push('震晕 ' + P.震晕);
   if (P.火烈弹)    附.push('火烈弹 ' + P.火烈弹);
+  if (P.长弓)      附.push('贯穿 ' + P.长弓 + (P.长弓加成 > 0 ? '（+'+Math.round(P.长弓加成*100)+'%）' : ''));
+  if (P.财源)      附.push('财源 ' + P.财源 + '（' + Math.round(P.level * (P.财源 >= 3 ? 4 : 2)) + '金/10秒）');
   设文(HUD.stExtra, 附.join('　'));
   HUD.mainPk.classList.toggle('hide', !主);
   HUD.hud.classList.toggle('hide', state === 'start');
@@ -3479,6 +3527,18 @@ function render(){
       ctx.globalAlpha = 0.30;
       px(p.x - p.vx / 速0 * 7 - 1, p.y - p.vy / 速0 * 7 - 1, 3, 3, p.crit ? '#ffe066' : '#9fe8ff');
       ctx.globalAlpha = 1;
+    }
+    if (p.长){
+      /* 长条形：沿飞行方向画一串方块，看起来才像一根长枪 */
+      const 速 = Math.hypot(p.vx, p.vy) || 1, ux = p.vx/速, uy = p.vy/速;
+      const 色 = p.crit ? '#ffe066' : '#9fe8ff';
+      ctx.globalAlpha = 0.45;
+      px(p.x - ux*26 - 3, p.y - uy*26 - 3, 6, 6, 色);
+      px(p.x - ux*19 - 3, p.y - uy*19 - 3, 6, 6, 色);
+      ctx.globalAlpha = 1;
+      px(p.x - ux*12 - 3, p.y - uy*12 - 3, 6, 6, 色);
+      px(p.x - 4, p.y - 4, 8, 8, '#ffffff');
+      continue;
     }
     px(p.x - 2, p.y - 2, 4, 4,
        p.比伤 ? '#ff8a3c' : (p.crit ? '#ffe066' : '#9fe8ff'));
