@@ -213,6 +213,8 @@
     <b style="color:#7fd4ff">迅捷</b> 做主词条 = 二段跳；再抽到 <b>迅捷·续</b> 就能在二段跳落地时砸一圈（范围和天崩地裂一样）<br>
     <b style="color:#ff8a3c">烈焰</b> = 和中毒同一套模板的持续灼烧，两个可以同时生效<br>
     <b style="color:#7fffd4">不屈 / 狂血</b> = 单次受到的伤害封顶（200→150→100），12 秒内置 CD<br>
+    <b style="color:#7fffd4">灵魂值</b> = 40 级解锁。击杀小幽魂 +1%、大幽魂 +5%、首领 +20%，<b>没有上限</b>；
+    它是一个最终伤害倍率，所有伤害算完后统一乘 (1 + 灵魂值)<br>
     <b style="color:#ffd94a">金币</b> = 怪死后掉的金色圆片，商店里花（19 级后每打死一只大幽魂开一次）<br>
     右上角一直显示<b>算完的最终属性</b>：攻击 / 弹数 / 攻速 / 暴击 / 暴伤 / DPS / 射程 / 复活次数<br>
     <b style="color:#ffd94a">黄帽窃贼</b> = 抢你经验球，抢满 5 秒就换一条命
@@ -690,6 +692,7 @@ function reset(){
     基攻: 7, atkPct: 0, 主词条: null, 主卡池: [], 已删词条: [], 已选唯一: null,
     选序: [], 复活次数: 0, 二段跳: 0, 跳数: 0, 贯穿: 0, 金币: 0,
     魂经验: 0, 魂金币: 0, 商店待开: 0, 商店主词条: [], 商店唯一: [], 跳跃AOE: 0,
+    灵魂: 0, 灵魂解锁: 0,
     flame: 0, 火烈弹: 0, 火烈Cd: 1, 不屈: 0, 狂血: 0, 震晕: 0,
     限伤CD: 0, 晕CD: 0, 碎盾爆: 0, 碎盾CD: 0, 狂暴阶: 0,
     hpup: 0, snipeCd: 0, execCd: 0, bianCd: 0, iceCd: 0, critSplit: 0, splitp: 0,
@@ -764,7 +767,7 @@ function 死神枪落(x){
   for (const e of enemies){
     if (e.dead || 无形(e)) continue;
     if (Math.abs(e.x - x) < R0 + e.w/2){
-      const 伤 = e.maxHp * 0.10;
+      const 伤 = e.maxHp * 0.10 * (1 + (P.灵魂 || 0));
       P.dmgDealt += 伤;
       if (e.盾 > 0){ e.盾 -= 伤; if (e.盾 <= 0){ e.hp += e.盾; e.盾 = 0; } }
       else e.hp -= 伤;
@@ -815,6 +818,15 @@ function addXp(v){
         + '　你的攻击力 +' + (P.污染 * 50) + '%');
     shake = 5;
     addParts(P.x, P.y - 9, '#c77dff', 30, 180);
+  }
+  /* 40 级：灵魂值解锁 */
+  if (P.level >= 40 && !P.灵魂解锁){
+    P.灵魂解锁 = 1;
+    播报('灵 魂 值 · 解 锁');
+    屏色 = '#7fffd4';  屏力 = 0.8;  shake = 11;
+    呼(0.70, 0.080, 500, 1500);  响(660, 0.55, 'triangle', 0.055, 1320);
+    addParts(P.x, P.y - 9, '#7fffd4', 46, 240);
+    rings.push({x: P.x, y: GROUND, r: 8, max: 200, life: 0.8, all: 0.8, color: '#7fffd4'});
   }
   if (pendingPerks > 0 && state === 'play') 推进选择();
 }
@@ -1157,6 +1169,8 @@ function hurtEnemy(e, d, isCrit){
   if (无形(e)) return;                      /* 悬停中的幽魂：打不到 */
   /* 蚀骨：每次命中额外造成目标最大生命 0.15% 的伤害 —— 后期打不动怪时的保底 */
   if (P.蚀骨) d += e.maxHp * 0.0015;
+  /* 灵魂值：所有伤害在「算完之后」统一乘一次 */
+  if (P.灵魂) d *= 1 + P.灵魂;
   if (e.type === 'ghost' && e.僵直 > 0) d *= 2;   /* 落地僵直 = 破绽，伤害翻倍 */
   /* 「壳」形态的护盾：盾没破之前，本体一滴血都不掉 */
   if (e.盾 > 0){
@@ -1281,6 +1295,20 @@ function killEnemy(e){
   e.dead = true;
   P.kills++;
   addParts(e.x, e.y - e.h/2, e.c1, 12, 110);
+  /* ══ 灵魂值（40 级解锁）══
+     小幽魂 +1%　大幽魂 +5%　首领 +20%，**没有上限**。
+     它是一个「最终伤害倍率」：所有伤害算完之后统一乘 (1 + 灵魂值)。
+     所以打得越多、后期越强 —— 也正好能自己把自己从「打不动怪」里捞出来。*/
+  if (P.level >= 40){
+    let 得 = 0;
+    if (e.type === 'ghost') 得 = 0.01;
+    else if (e.type === 'bigghost') 得 = 0.05;
+    if (e.boss) 得 += 0.20;
+    if (得 > 0){
+      P.灵魂 = (P.灵魂 || 0) + 得;
+      if (得 >= 0.05) addText(e.x, e.y - e.h - 16, '灵魂 +' + Math.round(得 * 100) + '%', '#7fffd4');
+    }
+  }
   { const 增K = 刷新增幅();
     if (增K.击杀回盾 && P.shieldMax > 0) P.shield = Math.min(P.shieldMax, P.shield + 1);
     if (增K.击杀回血) P.hp = Math.min(P.maxHp, P.hp + P.maxHp * 0.015); }
@@ -1461,12 +1489,16 @@ function spawnEnemy(type, opts){
   /* 污染值：每 10 级 +1。怪的基础血量/攻击 ×1.30^污染（指数叠加）*/
   const pol = Math.pow(1.30, P.污染 || 0);
   /* 每波的自然成长放得很缓 —— 难度主要交给污染值 */
-  /* 35 波之后每波 ×1.15
-     50 波之后再叠一档 ×1.07 —— 数值不显示，只在跨过 50 波时亮一句话。
-     两档叠起来：第 60 波 ≈ ×16.0，第 70 波 ≈ ×31.5（原方案是 11.2 / 22.1）*/
-  const 后期 = (wave >= 35 ? Math.pow(1.15, wave - 35) : 1)
-             * (wave >= 50 ? Math.pow(1.07, wave - 50) : 1);
-  const hpS  = Math.pow(1.10, wave - 1) * pol * 后期;
+  /* ══ 难度曲线（这一版按反馈重新配过）══
+     反馈：从 40 多波开始压力陡增 —— 说明 35 波那个「×1.15 拐点」太狠。
+     现在把曲线抹平一点：前面稍陡、后面降下来，整体更线性、没有明显断层。
+     真正的毛病是「每波涨幅」在 35 波突然从 10% 跳到 26.5%，那个拐点太硬。
+     现在：1~35 波每波 10% → 10.5%（稍陡，让成长感来得早一点）
+           35 波后每波 26.5% → 21%（降下来，拐点不再刺手）
+           50 波后再叠一档 ×1.06（只亮大字，不显示数值）*/
+  const 后期 = (wave >= 35 ? Math.pow(1.10, wave - 35) : 1)
+             * (wave >= 50 ? Math.pow(1.06, wave - 50) : 1);
+  const hpS  = Math.pow(1.105, wave - 1) * pol * 后期;
   const atkS = Math.pow(1.055, wave - 1) * pol * 后期;
   const spdS = Math.min(1.7, 1 + wave * 0.022);
 
@@ -2028,7 +2060,7 @@ function update(dt){
           addParts(e.x, e.y - e.h/2, '#ff8a3c', 12, 130);
         }
         if (p.引爆 && (e.frozen > 0 || e.slowT > 0)){
-          const 毒 = P.atk * (0.5 + 0.2 * (Math.max(1, P.poison) - 1)) * 5 * 8;
+          const 毒 = P.atk * (0.5 + 0.2 * (Math.max(1, P.poison) - 1)) * 5 * 8 * (1 + (P.灵魂 || 0));
           e.hp -= 毒; P.dmgDealt += 毒;
           addText(e.x, e.y - e.h - 18, '引爆 ' + Math.round(毒), '#8cd94a');
           addParts(e.x, e.y - e.h/2, '#8cd94a', 20, 150);
@@ -2122,7 +2154,7 @@ function update(dt){
       e.poisonTick -= dt;
       if (e.poisonTick <= 0){
         e.poisonTick = 0.2;
-        const 毒伤 = P.atk * (0.5 + 0.2 * (Math.max(1, P.poison) - 1));
+        const 毒伤 = P.atk * (0.5 + 0.2 * (Math.max(1, P.poison) - 1)) * (1 + (P.灵魂 || 0));
         if (无形(e)){ e.poisonT = 0; }        /* 悬停中的幽魂：毒挂不上 */
         else {
           e.hp -= 毒伤;
@@ -2144,7 +2176,7 @@ function update(dt){
       e.flameTick -= dt;
       if (e.flameTick <= 0){
         e.flameTick = 0.2;
-        const 火伤 = P.atk * (0.5 + 0.2 * (Math.max(1, P.flame) - 1));
+        const 火伤 = P.atk * (0.5 + 0.2 * (Math.max(1, P.flame) - 1)) * (1 + (P.灵魂 || 0));
         if (无形(e)){ e.flameT = 0; }
         else {
           e.hp -= 火伤;
@@ -3114,6 +3146,7 @@ function syncHUD(){
   const 魂 = [];
   if (P.魂经验) 魂.push('魂经验 +' + Math.round(P.魂经验 * 100) + '%');
   if (P.魂金币) 魂.push('魂金币 +' + Math.round(P.魂金币 * 100) + '%');
+  if (P.灵魂)   魂.push('灵魂 +' + Math.round(P.灵魂 * 100) + '%');
   设文(HUD.soul, 魂.join('　'));
 
   /* ---- 右上角：算完的最终属性 ----
