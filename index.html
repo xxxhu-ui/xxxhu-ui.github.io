@@ -205,6 +205,8 @@
     <b style="color:#ffe066">金色描边</b> = 精英怪（血厚、经验 ×3）<br>
     <b style="color:#ff5566">头顶红点</b> = 那个怪还剩几条命<br>
     <b style="color:#c77dff">污染值</b> = 每 10 级 +1，怪的基础数值 ×1.30，同时白送你 <b>攻击力百分比 +50%</b><br>
+    <b style="color:#ff8a9c">35 波之后</b>怪的血量不再无限膨胀（上限＝你的 DPS × 几秒），
+    但<b>攻击力继续涨</b> —— 后期靠躲，不靠磨<br>
     <b style="color:#c77dff">污染值</b> 每 +1，怪死后多 10% 概率留下「幽魂」；幽魂超过 5 只 → 聚合成<b>大幽魂</b><br>
     「幽魂」悬停时<b>无形</b>（打不到），俯冲落地后有 1 秒<b>破绽</b>（伤害翻倍）<br>
     每产出 18 只幽魂 → 全部湮灭，聚合成 3 条命的<b>大幽魂</b>（唯一；至少隔 3 波才会再来一只）<br>
@@ -213,7 +215,7 @@
     <b style="color:#7fd4ff">迅捷</b> 做主词条 = 二段跳；再抽到 <b>迅捷·续</b> 就能在二段跳落地时砸一圈（范围和天崩地裂一样）<br>
     <b style="color:#ff8a3c">烈焰</b> = 和中毒同一套模板的持续灼烧，两个可以同时生效<br>
     <b style="color:#7fffd4">不屈 / 狂血</b> = 单次受到的伤害封顶（200→150→100），12 秒内置 CD<br>
-    <b style="color:#7fffd4">灵魂值</b> = 40 级解锁。击杀小幽魂 +1%、大幽魂 +5%、首领 +20%，<b>没有上限</b>；
+    <b style="color:#7fffd4">灵魂值</b> = <b>35 级</b>解锁。击杀小幽魂 +1%、大幽魂 +5%、首领 +20%，<b>没有上限</b>；
     它是一个最终伤害倍率，所有伤害算完后统一乘 (1 + 灵魂值)<br>
     <b style="color:#ffd94a">金币</b> = 怪死后掉的金色圆片，商店里花（19 级后每打死一只大幽魂开一次）<br>
     右上角一直显示<b>算完的最终属性</b>：攻击 / 弹数 / 攻速 / 暴击 / 暴伤 / DPS / 射程 / 复活次数<br>
@@ -819,8 +821,8 @@ function addXp(v){
     shake = 5;
     addParts(P.x, P.y - 9, '#c77dff', 30, 180);
   }
-  /* 40 级：灵魂值解锁 */
-  if (P.level >= 40 && !P.灵魂解锁){
+  /* 35 级：灵魂值解锁 */
+  if (P.level >= 35 && !P.灵魂解锁){
     P.灵魂解锁 = 1;
     播报('灵 魂 值 · 解 锁');
     屏色 = '#7fffd4';  屏力 = 0.8;  shake = 11;
@@ -1083,7 +1085,7 @@ function 商店进阶词条(){
 function 刷商店(){
   const box = $('shopCards');  box.innerHTML = '';
   设文($('shGold'), P.金币 || 0);
-  商店货架.forEach(o => {
+  商店货架.filter(Boolean).forEach(o => {
     const st  = P.inv[o.id] || 0;
     const 满  = !!(o.max && st >= o.max);
     const 价  = 商店价格(o);
@@ -1148,10 +1150,18 @@ function 开商店(){
                ? ((Math.random() * 5) | 0) : -1;
   const 临时 = 进阶池.slice();
   for (let i = 0; i < 5; i++){
-    if (i === 唯一位) 商店货架.push(唯一池.splice((Math.random() * 唯一池.length) | 0, 1)[0]);
-    else if (临时.length) 商店货架.push(临时.splice((Math.random() * 临时.length) | 0, 1)[0]);
-    else if (唯一池.length) 商店货架.push(唯一池.splice((Math.random() * 唯一池.length) | 0, 1)[0]);
+    /* ⚠ 每个分支都必须自己判空。
+       这里踩过一次：唯一池只有 1 张、而「唯一位」抽到靠后的格子时，
+       前面那格会先走 else-if 把唯一用掉，轮到唯一位时池子已经空了 ——
+       splice()[0] 返回 undefined 塞进货架，刷商店读 o.id 直接抛异常。
+       在浏览器里那一抛会让商店弹不出来但状态已经切成 shop，等于永久卡死。*/
+    let 取 = null;
+    if (i === 唯一位 && 唯一池.length) 取 = 唯一池.splice((Math.random() * 唯一池.length) | 0, 1)[0];
+    else if (临时.length)              取 = 临时.splice((Math.random() * 临时.length) | 0, 1)[0];
+    else if (唯一池.length)            取 = 唯一池.splice((Math.random() * 唯一池.length) | 0, 1)[0];
+    if (取) 商店货架.push(取);
   }
+  商店货架 = 商店货架.filter(Boolean);      /* 兜底：货架里绝不能有 undefined */
   刷商店();
   $('shop').classList.remove('hide');
   响(1046, 0.16, 'triangle', 0.05, 1568);
@@ -1299,7 +1309,7 @@ function killEnemy(e){
      小幽魂 +1%　大幽魂 +5%　首领 +20%，**没有上限**。
      它是一个「最终伤害倍率」：所有伤害算完之后统一乘 (1 + 灵魂值)。
      所以打得越多、后期越强 —— 也正好能自己把自己从「打不动怪」里捞出来。*/
-  if (P.level >= 40){
+  if (P.level >= 35){          /* 解锁等级 35：平均一局死在 39~41 级，40 级等于永远开不了 */
     let 得 = 0;
     if (e.type === 'ghost') 得 = 0.01;
     else if (e.type === 'bigghost') 得 = 0.05;
@@ -1509,10 +1519,34 @@ function spawnEnemy(type, opts){
   const w  = Math.max(6, Math.round(d.w * sizeMul));
   const h  = Math.max(6, Math.round(d.h * sizeMul));
   /* 首领的血量按玩家当前 DPS 来定 —— 保证它一定会被打死，不会拖到下一波 */
-  const hp = opts.boss
-      ? Math.max(300, Math.round(玩家DPS() * (t === 'mirror' ? 4 : (t === 'wuxiang' ? 12 : 12))))
-      : (opts.hpDps ? Math.max(180, Math.round(玩家DPS() * opts.hpDps))
-                    : Math.max(1, Math.round(d.hp * hpS * hpMul)));
+  /* ══════════ 血量上限：35 波之后锚定「玩家当前 DPS」══════════
+     【为什么必须加】原来怪的血量是纯指数 1.105^波，而玩家的输出是靠词条线性堆的，
+     两者根本不在一个量级上。实测（不死玩家跑到 120 波）：
+         第 30 波：壮汉 1,651 血   玩家 DPS 204    → 磨 10 秒
+         第 40 波：壮汉 9,382 血   玩家 DPS 364    → 磨 32 秒
+         第 50 波：壮汉 66,049 血  玩家 DPS 395    → 磨 209 秒
+         第 60 波：壮汉 832,672 血 玩家 DPS 592    → 磨 1757 秒（29 分钟一只）
+         第 75 波：壮汉 4845 万血  玩家 DPS 977    → 磨 17 小时
+     按这个曲线，从 40 波开始游戏就变成「磨血」，而不是「打怪」。
+     现在给普通怪加一个血量天花板：不超过「玩家 DPS × 4 秒 × 体型系数」，
+     保证任何波数下，一只普通怪最多也就几秒的输出量。
+     后期难度改由「攻击力继续涨」（一下就能秒你）来提供 —— 靠躲，不靠磨。*/
+  let hp;
+  if (opts.boss){
+    hp = Math.max(300, Math.round(玩家DPS() * (t === 'mirror' ? 4 : 12)));
+  } else if (opts.hpDps){
+    hp = Math.max(180, Math.round(玩家DPS() * opts.hpDps));
+  } else {
+    hp = Math.max(1, Math.round(d.hp * hpS * hpMul));
+    if (wave >= 35){
+      const 体型 = d.hp / 14;                     /* 以史莱姆(14 血)为 1.0 */
+      /* 系数 1.1 的来历：实测玩家落在单个目标上的输出 ≈ 玩家DPS() × 0.8，
+         所以「血量 = 玩家DPS() × 1.1 × 体型」≈ 壮汉(体型3.86) 打 5.3 秒、
+         史莱姆 打 1.4 秒。调大就是更肉，调小就是更脆。*/
+      const 上限 = Math.round(玩家DPS() * 1.1 * 体型 * (elite ? 1.8 : 1) * (opts.hpMul || 1));
+      hp = Math.max(60, Math.min(hp, 上限));
+    }
+  }
 
   enemies.push({
     type: t, x, y: d.fly ? GROUND - 40 : GROUND, w, h,
